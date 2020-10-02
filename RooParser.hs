@@ -308,7 +308,8 @@ pExpression =
 -- | Parses a factor and returns and Expression node if accepted 
 pFactor :: Parser LocatedExpr
 pFactor =
-        choice [ parens pExpression, pStringLiteral, pIntLiteral, pBoolLiteral, pNegatedExpr, pLvalueExpr ]
+        choice [ parens pExpression, pStringLiteral, pIntLiteral
+               , pBoolLiteral, pNegatedExpr, pLvalueExpr ]
     <?>
         "expression"
 
@@ -365,7 +366,8 @@ pBoolLiteral =
 -- with the character. This is so that it rejects invalid escape sequences, but
 -- doesn't alter them -- for later injection into Oz.
 pStringLiteral :: Parser LocatedExpr
-pStringLiteral = liftSourcePos $ (EConst . LitString) <$> between quote (lexeme quote) pStringLitChars
+pStringLiteral
+    = liftSourcePos $ (EConst . LitString) <$> between quote (lexeme quote) pStringLitChars
     where
         pStringLitChars = concat <$> many (choice
             [ char '\\' *> choice [

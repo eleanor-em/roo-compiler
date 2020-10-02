@@ -122,7 +122,8 @@ main = do
                     exitFailure
                 where
                     labelError (AnalysisError line col err) = putChunksLn 
-                        [ (chunk $ pack $ progName <> ":" <> show line <> ":" <> show col <> ": ") & fore white
+                        [ (chunk $ pack $ progName <> ":" <> show line <> ":" <> show col <> ": ")
+                            & fore white
                         , "error: " & fore brightRed
                         , (chunk $ pack err <> "\n") & fore white
                         , chunk $ pack $ raw !! (line - 1) <> "\n"

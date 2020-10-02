@@ -103,7 +103,8 @@ prettyVarDecls (VarDecl typeName varIdents) = concat
     , intercalate ", " varIdents
     , endline ]
 
--- | Replaces a list of Statement nodes with its pretty-printed representation, with all statements appropriately formatted
+-- | Replaces a list of Statement nodes with its pretty-printed representation, with all statements
+--   appropriately formatted
 prettyAllStatements :: [Statement] -> Int -> String
 prettyAllStatements body startingIndent
     = concat $ map (prettyStatement startingIndent) body
@@ -113,11 +114,12 @@ prettyAllStatements body startingIndent
 -----------------------------------
 
 -- | Replaces a statement node with a its pretty-printed representation.
--- The `Int` argument represents the current indentation level.
+--   The `Int` argument represents the current indentation level.
 prettyStatement :: Int -> Statement -> String
 prettyStatement indentLevel statement
     = indents ++ case statement of
-        SAssign lvalue expr -> prettyLvalue lvalue ++ " <- " ++ prettyExpr (fromLocated expr) ++ endline
+        SAssign lvalue expr -> prettyLvalue lvalue ++ " <- " ++ prettyExpr (fromLocated expr)
+            ++ endline
         SRead lvalue -> "read " ++ prettyLvalue lvalue ++ endline
         SWrite expr -> "write " ++ prettyExpr (fromLocated expr) ++ endline
         SWriteLn expr -> "writeln " ++ prettyExpr (fromLocated expr) ++ endline
@@ -179,19 +181,20 @@ prettyGetExpr (EBinOp op lhs rhs) OpNone = intercalate " "
     , prettyBinOp op
     , prettyGetExpr (fromLocated rhs) (OpLeft op) ]
 
--- | Special case for binary operators: / is not associative with * on the left side, so we need to parenthesise the expression
+-- | Special case for binary operators: / is not associative with * on the left side, so we need to
+--   parenthesise the expression.
 prettyGetExpr expr@(EBinOp BinDivide _ _) (OpLeft BinTimes)
     = prettyParensExpr expr
 
--- | Handles the case where the parent operator is on the left. If the operators don't associate, and
--- the parent doesn't have lower precedence, we need to parenthesise.
-prettyGetExpr expr@(EBinOp op _ _) (OpLeft parentOp)
-    = parenthesiseIf expr $ not (isLeftAssociative op parentOp) && parentOp >= op || (nonAssociative op parentOp)
+-- | Handles the case where the parent operator is on the left. If the operators don't associate,
+--   the parent doesn't have lower precedence, we need to parenthesise.
+prettyGetExpr expr@(EBinOp op _ _) (OpLeft parentOp) = parenthesiseIf expr $
+    not (isLeftAssociative op parentOp) && parentOp >= op || (nonAssociative op parentOp)
 
--- | Handle the case where the parent operator is on the right. If the operators don't associate, and 
--- the parent operator has higher precedence, we need to parenthesise.
-prettyGetExpr expr@(EBinOp op _ _) (OpRight parentOp)
-    = parenthesiseIf expr $ parentOp `binaryHigherPrecedence` op || (nonAssociative op parentOp)
+-- | Handle the case where the parent operator is on the right. If the operators don't associate,
+--   and the parent operator has higher precedence, we need to parenthesise.
+prettyGetExpr expr@(EBinOp op _ _) (OpRight parentOp) = parenthesiseIf expr $
+    parentOp `binaryHigherPrecedence` op || (nonAssociative op parentOp)
 
 -- | Dealing with unary operator precedence 
 prettyGetExpr (EUnOp op (LocatedExpr _ expr@(EBinOp innerOp _ _))) OpNone
@@ -242,7 +245,7 @@ nonAssociative lOp rOp = (lOp `elem` nonAssociativeBinOp) && (rOp `elem` nonAsso
 binaryHigherPrecedence :: BinOp -> BinOp -> Bool
 binaryHigherPrecedence lOp rOp = not (samePrecedence lOp rOp) && lOp > rOp
 
--- | Helper function for the above. True if and only if the binary operators have the same precedence. 
+-- | Helper function for the above. True iff the binary operators have the same precedence. 
 samePrecedence :: BinOp -> BinOp -> Bool 
 samePrecedence BinDivide BinTimes  = True 
 samePrecedence BinTimes  BinDivide = True 
