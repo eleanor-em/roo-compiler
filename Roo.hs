@@ -6,16 +6,27 @@ Main program written by $team for Programming Language Implementation
 Assignment 1b. This program handles command-line flags and calls the appropriate function to 
 handle the request.  
 -}
+
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where 
-import System.Environment
-import System.Exit
+import System.Environment ( getArgs )
+import System.Exit ( exitFailure, exitSuccess )
 import System.Console.GetOpt 
-import System.Directory
-import Text.Parsec
+import System.Directory ( doesFileExist )
+
+import Data.Function ((&))
+import Data.Text (pack)
+
+import Rainbow
+import Text.Parsec ( runParser )
 import Text.Pretty.Simple (pPrint)
 
+
 import RooParser
-import RooPrettyPrinter
+import RooPrettyPrinter ( prettyPrint )
+import RooAnalyse
+import RooCompile ( compileProgram )
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -72,10 +83,8 @@ handleAst TestPrettyPrinter ast = do
 -- Below should never happen
 handleAst Help _ = undefined
 
--- | Takes a list of program filenames, checks if it's non-empty, and if so
--- runs the appropriate sub-command on the program filename.
-runProgram :: Flag -> [String] -> IO ()
-runProgram flag progNames =
+getAst :: [String] -> IO (ParsedAst, [String])
+getAst progNames = 
     if length progNames == 0 then do
         putStrLn "error: must provide file"
         putStr usage
@@ -91,7 +100,7 @@ runProgram flag progNames =
 
             let output = runParser pProgram 0 "" input
             case output of 
-                Right ast -> handleAst flag ast
+                Right ast -> return (ast, lines input)
                 Left  err -> do
                     print err
                     exitFailure
@@ -104,10 +113,29 @@ main = do
     args <- getArgs
     (flags, progNames) <- compilerFlags args 
     if length flags == 0 then do
-        putStr usage
-        exitFailure
+        (ast, raw) <- getAst progNames
+        -- At this point, progNames is known to be non-empty
+        let progName = head progNames
+        case compileProgram ast of
+            Left errs -> do
+                    mapM_ labelError errs
+                    exitFailure
+                where
+                    labelError (AnalysisError line col err) = putChunksLn 
+                        [ (chunk $ pack $ progName <> ":" <> show line <> ":" <> show col <> ": ") & fore white
+                        , "error: " & fore brightRed
+                        , (chunk $ pack err <> "\n") & fore white
+                        , chunk $ pack $ raw !! (line - 1) <> "\n"
+                        , chunk $ pack $ (take (col - 1) $ cycle " ")
+                        , "^" & fore brightGreen]
+            Right output -> do
+                putStrLn $ concat output
+                exitSuccess
+
     else case head flags of
         Help -> do
             putStr usage
             exitFailure
-        flag -> runProgram flag progNames
+        flag -> do
+            (ast, _) <- getAst progNames
+            handleAst flag ast

@@ -739,8 +739,11 @@ execute_instr_at_pc(void) {
 
             case FUNCOP_READ_BOOL:
                 init_all_regs();
+                // ELEANOR: attempt to break it!
+                printf("note: offset = %d\n", offset);
                 if (scanf("%s", buf) != 1) 
                     report_error_and_exit("cannot read bool");
+                printf("note: offset = %d\n", offset);
                 if (streq(buf, "true")) 
                     set_reg_int(0, 1);
                 else if (streq(buf, "false")) 

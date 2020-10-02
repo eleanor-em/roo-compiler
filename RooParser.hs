@@ -19,14 +19,20 @@ import Text.Parsec.Language (emptyDef)
 import Text.Parsec.Expr
 import qualified Text.Parsec.Token as Q
 
-import Data.Functor
-
-import System.Environment
-import System.Exit
+import Data.Functor ( ($>) )
 
 type Parser a = Parsec String Int a
 
 type ParsedAst = Program
+
+-----------------------------------
+-- Utility Functions
+-----------------------------------
+sourcePos :: Parser SourcePos
+sourcePos = statePos <$> getParserState
+
+liftSourcePos :: Parser Expression -> Parser LocatedExpr
+liftSourcePos = liftA2 LocatedExpr sourcePos
 
 -----------------------------------
 -- Scanner Definitions
@@ -293,17 +299,16 @@ pWhileStatement = do
 -----------------------------------
 
 -- | Parses an expression and returns an Expression node if accepted 
-pExpression :: Parser Expression
-pExpression =
+pExpression :: Parser LocatedExpr
+pExpression = 
         buildExpressionParser opTable pFactor
     <?>
         "expression"
 
 -- | Parses a factor and returns and Expression node if accepted 
-pFactor :: Parser Expression
+pFactor :: Parser LocatedExpr
 pFactor =
-    choice [ parens pExpression, pStringLiteral, pIntLiteral
-           , pBoolLiteral, pNegatedExpr, pLvalueExpr ]
+        choice [ parens pExpression, pStringLiteral, pIntLiteral, pBoolLiteral, pNegatedExpr, pLvalueExpr ]
     <?>
         "expression"
 
@@ -327,34 +332,40 @@ opTable = reverse
 -- | Parses a negated expression and returns an Expression node if accepted 
 -- Handle negated expressions (integer and boolean) separately so that we can handle nested
 -- prefix operators, e.g. `b <- not not not ------1;`
-pNegatedExpr :: Parser Expression
-pNegatedExpr =
-        (EUnOp UnNegate) <$> (lexeme (char '-') *> pFactor)
-    <|>
-        (EUnOp UnNot) <$> (reservedOp "not" *> pFactor)
+pNegatedExpr :: Parser LocatedExpr
+pNegatedExpr = do
+        pos <- sourcePos
+        lexeme $ char '-'
+        fac <- pFactor
+        return $ LocatedExpr pos $ EUnOp UnNegate fac
+    <|> do
+        pos <- sourcePos
+        reservedOp "not"
+        fac <- pFactor
+        return $ LocatedExpr pos $ EUnOp UnNot fac
 
 -- | Parses an lvalue expression and returns an Expression node if accepted 
-pLvalueExpr :: Parser Expression
-pLvalueExpr = ELvalue <$> pLvalue
+pLvalueExpr :: Parser LocatedExpr
+pLvalueExpr = liftSourcePos $ ELvalue <$> pLvalue
 
 -- | Parses an int literal and returns an Expression node if accepted
-pIntLiteral :: Parser Expression
-pIntLiteral = EConst . LitInt <$> decimal
+pIntLiteral :: Parser LocatedExpr
+pIntLiteral = liftSourcePos $ EConst . LitInt <$> decimal
 
 -- | Parses a boolean expression and returns an Expression node if accepted 
-pBoolLiteral :: Parser Expression
+pBoolLiteral :: Parser LocatedExpr
 pBoolLiteral =
-        (EConst . LitBool) <$> (reserved "true"  $> True)
+        liftSourcePos ((EConst . LitBool) <$> (reserved "true"  $> True))
     <|>
-        (EConst . LitBool) <$> (reserved "false" $> False)
+        liftSourcePos ((EConst . LitBool) <$> (reserved "false" $> False))
 
 -- | Parses a string literal and returns an Expression node if accepted. Works by
 -- seeing if we can parse a valid escape sequence, and if so, returning a string
 -- containing the unaltered escape sequence; otherwise, returns a singleton string
 -- with the character. This is so that it rejects invalid escape sequences, but
 -- doesn't alter them -- for later injection into Oz.
-pStringLiteral :: Parser Expression
-pStringLiteral = (EConst . LitString) <$> between quote (lexeme quote) pStringLitChars
+pStringLiteral :: Parser LocatedExpr
+pStringLiteral = liftSourcePos $ (EConst . LitString) <$> between quote (lexeme quote) pStringLitChars
     where
         pStringLitChars = concat <$> many (choice
             [ char '\\' *> choice [
@@ -383,8 +394,13 @@ composeOpParser = return (.)
 
 -- | Create an unary operator parser from a name and a syntax tree node
 unary name op = Prefix $
-    chainl1 (reserved name $> EUnOp op) composeOpParser
+    chainl1 (reserved name $>
+        (\expr -> let pos = locate expr in
+            LocatedExpr pos $ EUnOp op expr)
+     ) composeOpParser
 
 -- | Create a binary operator parser from a name and a syntax tree node
 binary name op = Infix $
-    try $ reservedOp name $> EBinOp op
+    try $ reservedOp name $>
+        (\lhs rhs -> let pos = locate rhs in
+            LocatedExpr pos $ EBinOp op lhs rhs)

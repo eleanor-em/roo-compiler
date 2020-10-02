@@ -9,6 +9,8 @@ up the Roo Language.
 
 module RooAst where
 
+import Text.Parsec ( SourcePos )
+
 -- | A Roo Program node consists of: 
 -- 
 --     1. a list of records 
@@ -86,14 +88,14 @@ data TypeName = PrimitiveTypeName PrimitiveType | AliasTypeName Ident
 --     * an ifelse statement
 --     * a while statement 
 data Statement 
-    = SAssign LValue Expression
+    = SAssign LValue LocatedExpr
     | SRead LValue
-    | SWrite Expression
-    | SWriteLn Expression
-    | SCall Ident [Expression]
-    | SIf Expression [Statement]
-    | SIfElse Expression [Statement] [Statement]
-    | SWhile Expression [Statement]
+    | SWrite LocatedExpr
+    | SWriteLn LocatedExpr
+    | SCall Ident [LocatedExpr]
+    | SIf LocatedExpr [Statement]
+    | SIfElse LocatedExpr [Statement] [Statement]
+    | SWhile LocatedExpr [Statement]
     deriving (Show, Eq)
 
 -- | An Expression node can be one of:
@@ -104,9 +106,21 @@ data Statement
 data Expression
     = ELvalue LValue
     | EConst Literal
-    | EBinOp BinOp Expression Expression
-    | EUnOp UnOp Expression
-    deriving (Show, Eq) 
+    | EBinOp BinOp LocatedExpr LocatedExpr
+    | EUnOp UnOp LocatedExpr
+    deriving (Show, Eq)
+
+data LocatedExpr = LocatedExpr SourcePos Expression
+    deriving (Show, Eq)
+
+fromLocated :: LocatedExpr -> Expression
+fromLocated (LocatedExpr _ expr) = expr
+
+locate :: LocatedExpr -> SourcePos
+locate (LocatedExpr pos _) = pos
+
+unpackLocated :: LocatedExpr -> (SourcePos, Expression)
+unpackLocated (LocatedExpr pos expr) = (pos, expr)
 
 -- | A Literal node can be one of:
 --     * a boolean
@@ -142,8 +156,8 @@ data UnOp = UnNot | UnNegate
 data LValue
     = LId Ident
     | LMember Ident Ident
-    | LArray Ident Expression
-    | LArrayMember Ident Expression Ident
+    | LArray Ident LocatedExpr
+    | LArrayMember Ident LocatedExpr Ident
     deriving (Show, Eq)
 
 -- | Identifier is a non empty sequence of chars (or String)
