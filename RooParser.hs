@@ -113,7 +113,7 @@ pProcedure = do
         reserved "procedure"
         header <- pHeader
         varDecls <- many pVarDecl
-        body <- braces (many pStatement)
+        body <- braces (many1 pStatement)
         return $ Procedure header varDecls body
     <?>
         "procedure"
