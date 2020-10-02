@@ -1,0 +1,38 @@
+# Roo program used to exemplify pretty-printing
+record {integer client_number;integer balance;
+boolean approved}
+account;
+array [10] integer
+tax;
+array [10] account
+# Do we even have 10 clients?
+account_array;
+procedure main ()
+integer i,
+n,
+bal;
+account_array a;
+integer to_pay;
+tax t;
+{
+write "Number of clients (up to 10): ";
+read n; write
+"\n";
+i<-0;
+while (i< n)
+do write "Client number: ";
+read a[i].client_number;
+write "Client’s balance: " ;
+read bal;
+a[i].balance <- bal ;
+if bal<=18200 then
+to_pay<-0 ; else
+if bal<=37000 then to_pay <- ( bal-18200 )/5;
+else to_pay <- (3640 + ( (bal-37000) / 3 ) );
+fi fi
+t [i] <- to_pay;
+i <- i+1;
+od
+i<-0;
+while i < n do writeln t[i]; od
+}

@@ -1,0 +1,10 @@
+procedure test ()
+{
+    y <- a = (b < x);
+    y <- a = ((a = b) < x);
+    y <- not (not y);
+    y <- not (x or y);
+    y <- not (x and (not y));
+}
+
+

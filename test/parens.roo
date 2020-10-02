@@ -1,0 +1,61 @@
+procedure main ()
+{
+    n <- (a * b) + c;
+    n <- (a / b) + c;
+    n <- (a + b) + c;
+    n <- (a - b) + c;
+    n <- (a * b) - c;
+    n <- (a / b) - c;
+    n <- (a + b) - c;
+    n <- (a - b) - c;
+    n <- (a * b) * c;
+    n <- (a / b) * c;
+    y <- (a + b) * c;
+    y <- (a - b) * c;
+    n <- (a * b) / c;
+    n <- (a / b) / c;
+    y <- (a + b) / c;
+    y <- (a - b) / c;
+
+    y <- a * (b + c);
+    y <- a / (b + c);
+    n <- a + (b + c);
+    y <- a - (b + c);
+    y <- a * (b - c);
+    y <- a / (b - c);
+    n <- a + (b - c);
+    y <- a - (b - c);
+    n <- a * (b * c);
+    y <- a / (b * c);
+    n <- a + (b * c);
+    n <- a - (b * c);
+    y <- a * (b / c);
+    y <- a / (b / c);
+    n <- a + (b / c);
+    n <- a - (b / c);
+
+    y <- -(a + b);
+    n <- (-a) + b;
+
+    y <- (a = b) = c;
+    y <- a = (b = c);
+
+    n <- (not a) and b;
+    y <- not (a and b);
+    n <- (not a) or b;
+    y <- not (a or b);
+    n <- a and (not b);
+    n <- a or (not b);
+
+    n <- not (1 < 2);
+    n <- not (1 > 2);
+    
+    y <- (not a) = b;
+    n <- not a = b;
+    
+    n <- a = (not b);
+    n <- a = not b;
+
+    y <- a = (b < c);
+    y <- a = ((a = b) < c);
+}

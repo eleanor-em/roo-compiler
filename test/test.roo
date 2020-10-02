@@ -1,0 +1,41 @@
+
+record {
+    integer name
+} example  ;
+
+record {
+    integer name ; 
+    boolean active
+} example ;
+
+array[12] boolean testArray;
+
+procedure main(integer  x  ,   integer val y)
+
+integer value;
+boolean other_Value';
+{
+    value <- - --1;
+    b <- not not not ------1;
+    value <-- --1;
+    value <- -3 * (-3 + 2) ;
+    a.b <- "\"hello";
+    b<-1;
+    try <- 1/-2;
+
+    bool <- true and (5 or 3 = 2 and not - never);
+    if 2 <-3 then
+        value <- 2 + 3;
+    fi
+    while 2 > 3 do if 2 > 3 then value <- 2 + 3; fi od
+    value [  2 ] <- 1 ;  
+    value[ 2 ] . b <- 4;
+    call test ( 3 + 2,2 - 1 )  ; 
+    bool <- not (1 < 2);
+    bool2 <- true = not false;
+    bool3 <- (a or b) and c;
+    y <- (1 = 2) = 3;
+    y <- -(1 + 2);
+    test <- "\"hello\n\t";
+}
+

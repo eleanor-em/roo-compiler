@@ -1,0 +1,15 @@
+procedure main()
+    integer i;
+    integer j;
+    boolean b;
+{
+    b <- false;
+    i <- 2 * (1 + 10) - 2 * 2 + 24;
+    write i;
+    write "\n";
+    write b;
+    write "\n";
+    j <- i;
+    write j;
+    write "\n";
+}

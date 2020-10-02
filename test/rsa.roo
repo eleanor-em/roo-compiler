@@ -1,0 +1,250 @@
+record
+    { integer modulus
+    ; integer exponent
+    } rsa_pubkey_t;
+record
+    { integer modulus
+    ; integer exponent
+    ; integer p
+    ; integer q
+    ; integer phi
+    } rsa_privkey_t;
+
+# Generate the integer square root of an input using Newton's method.
+procedure isqrt_rec (integer val x, integer val n, integer result)
+    integer next_x;
+    integer next_iter;
+{
+    next_x <- (x + n / x) / 2;
+    if next_x = x or next_x = x + 1 then
+        result <- next_x;
+    else
+        call isqrt_rec(x, n, result);
+    fi
+}
+
+# Convenience procedure to start Newton's method at n
+procedure isqrt (integer val n, integer result)
+{
+    call isqrt_rec(n, n, result);
+}
+
+# Calculate x mod n
+procedure mod (integer val x, integer val n, integer result)
+{
+    result <- n - x / n * n;
+    if result = n then
+        result <- 0;
+    fi
+    while result < 0 do
+        result <- result + n;
+    od
+}
+
+# Generate a random number given `seed`, and save it back in `seed`
+procedure random (integer seed)
+    integer a;
+    integer b;
+    integer m;
+{
+    # This is NOT cryptographically secure, and isn't claimed to be.
+
+    a <- 238351756174618923482356278561874612472147182491;
+    b <- 392596713628147537281593756182947315662938501293;
+    m <- 917237151741571310235105198610957321591035610532;
+    
+    seed <- a * seed + b;
+    call mod(seed, m, seed);
+}
+
+# Check if n is prime
+procedure is_prime (integer val n, boolean result)
+    integer x;
+    integer sqrt_n;
+    integer mod_result;
+{
+    x <- 2;
+    call mod(x, 2, mod_result);
+    if mod_result = 0 then
+        result <- false;
+    else
+        x <- 3;
+        result <- true;
+        while result and x <= sqrt_n + 1 do
+            if n / x * x = n then
+                found_witness <- false;
+            fi
+            x <- x + 2;
+        od
+    fi
+}
+
+# Get a random prime number
+procedure random_prime (integer seed, integer prime)
+    integer m;
+    boolean prime_result;
+{
+    m <- 917237151741571310235105198610957321591035610532;
+    prime_result <- false;
+
+    while prime_result = false do
+        call random(seed);
+        call is_prime(seed, prime_result);
+    od
+    
+    prime <- seed;
+}
+
+# Calculate gcd of a and b using the Euclidean algorithm
+procedure ext_gcd (integer val a, integer val b, integer result, integer a_inverse)
+    integer old_r;
+    integer r;
+    integer old_s;
+    integer s;
+    integer old_t;
+    integer t;
+    integer q;
+    integer temp;
+{
+    old_r <- a;
+    r <- b;
+
+    while r > 0 do
+        q <- old_r / r;
+
+        temp <- r;
+        r <- old_r - q * r;
+        old_r <- temp;
+        
+        temp <- s;
+        s <- old_s - q * s;
+        old_s <- temp;
+        
+        temp <- t;
+        t <- old_t - q * t;
+        old_t <- temp;
+    od
+
+    result <- old_r;
+    a_inverse <- old_s;
+}
+
+# Get a random number coprime to n and its inverse
+procedure random_coprime (integer seed, integer result, integer inverse, integer val n)
+    integer gcd;
+    boolean done;
+{
+    done <- false;
+    while not done do
+        call ext_gcd(seed, n, gcd, inverse);
+        result <- seed;
+        if gcd = 1 then
+            done <- true;
+        fi
+    od
+}
+
+procedure rsa_keygen (integer seed, rsa_pubkey_t pk, rsa_privkey_t sk)
+{
+    call random_prime(seed, sk.p);
+    call random_prime(seed, sk.q);
+    pk.modulus <- sk.p * sk.q;
+    sk.modulus <- pk.modulus;
+    sk.phi <- (sk.p - 1) * (sk.q - 1);
+
+    call random_coprime(seed, pk.exponent, sk.exponent, sk.phi);
+}
+
+procedure mod_pow (integer val x, integer val m, integer val pow, integer result)
+    integer base;
+    integer pow';
+    integer mod_result;
+{
+    result <- 1;
+    pow' <- pow;
+    call mod(x, m, base);
+
+    while pow' > 0 do
+        call mod(pow', 2, mod_result);
+        if mod_result = 1 then
+            call mod(result * base, m, result);
+        fi
+        pow' <- pow' / 2;
+        call mod(base * base, m, base);
+    od
+}
+
+procedure rsa_encrypt (rsa_pubkey_t pk, integer val message, integer result)
+{
+    call mod_pow(message, pk.modulus, pk.exponent, result);
+}
+
+procedure rsa_decrypt (rsa_privkey_t sk, integer val ciphertext, integer result)
+{
+    call mod_pow(ciphertext, sk.modulus, sk.exponent, result);
+}
+
+procedure main ()
+    integer input;
+    integer message;
+    integer ciphertext;
+    integer seed;
+    rsa_pubkey_t pk;
+    rsa_privkey_t sk;
+{
+    writeln "Enter 0 for keygen, 1 for encrypt, or 2 for decrypt.";
+    read input;
+
+    if input = 0 then
+        write "Enter a numeric seed: ";
+        read seed;
+
+        call rsa_keygen(seed, pk, sk);
+        write "Public key:  { \"modulus\": ";
+        write pk.modulus;
+        write ", \"exponent\": ";
+        write pk.exponent;
+        writeln " }";
+        write "Private key: { \"exponent\": ";
+        write sk.exponent;
+        write ", \"p\": ";
+        write sk.p;
+        write ", \"q\": ";
+        write sk.q;
+        write ", \"phi\": ";
+        write sk.phi;
+        writeln " }";
+    else
+        if input = 1 then
+            write "Enter pubkey modulus: ";
+            read pk.modulus;
+            write "Enter pubkey exponent: ";
+            read pk.exponent;
+
+            write "Enter message: ";
+            read message;
+            
+            call rsa_encrypt(pk, message, ciphertext);
+            
+            write "Ciphertext: ";
+            writeln ciphertext;
+        else
+            write "Enter privkey modulus: ";
+            read sk.modulus;
+            write "Enter privkey p: ";
+            read sk.p;
+            write "Enter privkey q: ";
+            read sk.q;
+            write "Enter privkey phi: ";
+            read sk.phi;
+
+            write "Enter ciphertext: ";
+            read ciphertext;
+
+            call rsa_decrypt(sk, ciphertext, message);
+
+            write "Message: ";
+            writeln message;
+        fi
+    fi
+}

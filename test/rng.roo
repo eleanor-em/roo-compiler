@@ -1,0 +1,34 @@
+procedure mod (integer val x, integer val n, integer result)
+{
+    result <- n - x / n * n;
+    if result = n then
+        result <- 0;
+    fi
+    while result < 0 do
+        result <- result + n;
+    od
+}
+
+procedure random (integer seed)
+    integer a;
+    integer b;
+    integer m;
+{
+    a <- 23835175617461271;
+    b <- 32851856172362136;
+    m <- 91723715174157131;
+    
+    seed <- a * seed + b;
+    call mod(seed, m, seed);
+}
+
+procedure main ()
+    integer seed;
+{
+    seed <- 0;
+
+    while true do
+        call random(seed);
+        writeln seed;
+    od
+}

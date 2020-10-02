@@ -1,0 +1,47 @@
+# Generate the integer square root of an input using Newton's method.
+procedure isqrt_rec (integer val x, integer val n, integer result)
+    integer next_x;
+    integer next_iter;
+{
+    next_x <- (x + n / x) / 2;
+    if next_x = x or next_x = x + 1 then
+        result <- next_x;
+    else
+        call isqrt_rec(x, n, result);
+    fi
+}
+
+# Convenience procedure to start Newton's method at n
+procedure isqrt (integer val n, integer result)
+{
+    call isqrt_rec(n, n, result);
+}
+
+procedure main ()
+    integer n;
+    integer sqrt_n;
+    integer x;
+    boolean found_witness;
+{
+    writeln "2 is prime!";
+    n <- 5;
+    while true do
+        x <- 3;
+        found_witness <- false;
+        call isqrt(n, sqrt_n);
+
+        while not found_witness and x <= sqrt_n + 1 do
+            if n / x * x = n then
+                found_witness <- true;
+            fi
+            x <- x + 2;
+        od
+
+        if not found_witness then
+            write n;
+            writeln " is prime!";
+        fi
+    
+        n <- n + 1;
+    od
+}

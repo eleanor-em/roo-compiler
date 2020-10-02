@@ -1,0 +1,97 @@
+# 2x2 integer matrices ought to be enough for anyone
+array[4] integer matrix;
+
+# a * b = c
+procedure matrix_multiply (matrix a, matrix b, matrix c)
+    integer i;
+    integer j;
+    integer k;
+    integer n;
+{
+    i <- 0;
+    n <- 2;
+    while i < n do
+        j <- 0;
+        while j < n do
+            k <- 0;
+	    while k < n do
+                c[i*n + j] <- a[i*n + k] * b[k*n + j];
+		k <- k + 1;
+	    od
+	    j <- j + 1;
+	od
+	i <- i + 1;
+    od
+}
+
+procedure matrix_row_swap (matrix a, integer i, integer j)
+    integer tmp;
+    integer k;
+    integer n;
+{
+    k <- 0;
+    n <- 2;
+    while k < n do
+	tmp <- a[i*n + k];
+	a[i*n + k] <- a[j*n + k];
+	a[j*n + k] <- tmp;
+        k <- k + 1;
+    od
+}
+
+procedure matrix_row_multiply (matrix a, integer row, integer factor)
+    integer i;
+    integer n;
+{
+    i <- 0;
+    n <- 2;
+    while i < n do
+	a[row*n + i] <- a[row*n + i] * factor;
+        i <- i + 1;
+    od
+}
+
+procedure matrix_row_add (matrix a, integer i, integer j, integer factor)
+    integer k;
+    integer n;
+{
+    k <- 0;
+    n <- 2;
+    while k < n do
+        a[i*n + k] <- a[i*n + k] + a[j*n + k] * factor;
+    od
+}
+
+procedure matrix_row_reduce (matrix a)
+    integer pivot;
+    integer n;
+    integer i;
+{
+    n <- 2;
+    pivot <- 0;
+    while pivot < n do
+        i <- pivot;
+        # get a nonzero in the pivot column/row
+        if a[pivot*n + pivot] = 0 then
+            while i < n do
+	        if a[i*n + pivot] != 0 then
+		    call matrix_row_swap(a, pivot, i);
+		fi
+		i <- i + 1;
+	    od
+        fi
+
+	if a[pivot*n + pivot] then
+	    # make the pivot 1
+	    call matrix_row_multiply(a, pivot, 1/a[pivot*n + pivot]);
+	    # kill everything else in the column
+	    i <- 0;
+	    while i < n do
+	        if i != pivot and a[i*n + pivot] != 0 then
+		    call matrix_row_add(a, i, pivot, -a[i*n + pivot]);
+		fi
+	    od
+	fi
+	pivot <- pivot + 1;
+    od
+}

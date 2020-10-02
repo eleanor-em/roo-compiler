@@ -1,0 +1,76 @@
+# We only have static arrays, so 10 is a good size
+array[10] integer buf10;
+
+# Implementation shamelessly stolen from Skiena's Algorithm Design Manual
+procedure quicksort (buf10 data, integer val low, integer val high)
+    integer pivot;
+{
+    if high - low > 0 then
+        call partition(data, low, high, pivot);
+        call quicksort(data, low, pivot - 1);
+        call quicksort(data, pivot + 1, high);
+    fi
+}
+
+# Note: result is an output variable
+procedure partition (buf10 data, integer val low, integer val high, integer result)
+    integer i, pivot, divider;
+{
+    pivot <- high;
+    divider <- low;
+    i <- low;
+    while i < high do
+        if data[i] < data[pivot] then
+            # Assumes the pass-by-reference semantics applies to array elements
+            call swap(data[i], data[divider]);
+            divider <- divider + 1;
+        fi
+        i <- i + 1;
+    od
+    call swap(data[pivot], data[divider]);
+    result <- divider;
+}
+
+procedure swap (integer a, integer b)
+    integer temp;
+{
+    temp <- b;
+    b <- a;
+    a <- temp;
+}
+
+procedure read_buf10 (buf10 data)
+    integer i;
+{
+    i <- 0;
+    while i < 10 do
+        write "Enter value ";
+        write i + 1;
+        write " of 10: ";
+        read buf10[i];
+        i <- i + 1;
+    od
+}
+
+procedure write_buf10 (buf10 data)
+    integer i;
+{
+    i <- 0;
+    while i < 9 do
+        write data[i];
+        write ", ";
+        i <- i + 1;
+    od
+    writeln arr[9];
+}
+
+procedure main () 
+    buf10 data;
+{
+    while true do
+        call read_buf10(data);
+        call quicksort(data, 0, 9);
+        write "Your sorted data is ";
+        call write_buf10(data);
+    od
+}
