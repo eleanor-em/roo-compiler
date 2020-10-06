@@ -171,3 +171,8 @@ procedure to_int(bigint_t x, integer result)
         result <- result * -1;
     fi
 }
+
+procedure main()
+{
+    writeln "hello world";
+}

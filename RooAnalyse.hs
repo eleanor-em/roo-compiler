@@ -16,14 +16,21 @@ hasMain procs = case Map.lookup "main" procs of
 -- | An expression paired with its type.
 data TypedExpression = TypedExpression Type Expression
 
-typeOf :: TypedExpression -> Type
-typeOf (TypedExpression ty _) = ty
+typeof :: TypedExpression -> Type
+typeof (TypedExpression ty _) = ty
 
 -- | Type-checks a located expression, and returns the expression annotated with its type
 --   if successful. This is a helpful shortcut for code generation.
 analyseExpression :: AliasTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] TypedExpression
 analyseExpression aliases locals expr
     = liftSingleErr $ typecheckExpression aliases locals $ fromLocated expr
+
+typecheckArrayIndex :: AliasTable -> LocalTable -> LocatedExpr -> Either AnalysisError ()
+typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
+    indexTy <- typecheckExpression aliases locals expr
+    case typeof indexTy of
+        TInt -> return ()
+        ty -> fromSourcePos pos $ "expected index expression of type `integer`, found `" ++ show ty ++ "`"
 
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
@@ -33,7 +40,15 @@ typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
         Just sym -> Right $ TypedExpression (procSymType $ symType sym) expr
         Nothing  -> fromSourcePos pos $ "unknown identifier `" ++ ident ++ "`"
 
-typecheckExpression _ _ (ELvalue _) = error "not yet implemented"
+typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) indexExpr))
+    = case Map.lookup ident (localSymbols locals) of
+        Just sym -> do
+            case procSymType $ symType sym of
+                TArray _ ty -> do
+                    typecheckArrayIndex aliases locals indexExpr
+                    return $ TypedExpression ty expr
+                ty ->  fromSourcePos pos $ "expected array type, found `" ++ show ty ++ "`"
+        Nothing  -> fromSourcePos pos $ "unknown identifier `" ++ ident ++ "`"
 
 -- Literals are always well-typed.
 typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
@@ -43,14 +58,14 @@ typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
 
 -- Boolean negations must check whether the inner expression is boolean.
 typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
-    exprType <- typeOf <$> typecheckExpression aliases locals inner
+    exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
         TBool -> return $ TypedExpression TInt expr
         ty    -> fromSourcePos pos $ "expecting `boolean`, found `" ++ show ty ++ "`"
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
-    exprType <- typeOf <$> typecheckExpression aliases locals inner
+    exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
         TInt -> return $ TypedExpression TInt expr
         ty   -> fromSourcePos pos $ "expecting `integer`, found `" ++ show ty ++ "`"
@@ -66,8 +81,8 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
     | otherwise = do
         lExpr <- typecheckExpression aliases locals lhs
         rExpr <- typecheckExpression aliases locals rhs
-        let ltype = typeOf lExpr
-        let rtype = typeOf rExpr
+        let ltype = typeof lExpr
+        let rtype = typeof rExpr
         if ltype /= TString then
             if rtype /= TString then
                 if ltype == rtype then
@@ -85,8 +100,8 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
             fromSourcePos lPos $ "cannot compare `string`"
     where
         checkBoth ty = do
-            ltype <- typeOf <$> typecheckExpression aliases locals lhs
-            rtype <- typeOf <$> typecheckExpression aliases locals rhs
+            ltype <- typeof <$> typecheckExpression aliases locals lhs
+            rtype <- typeof <$> typecheckExpression aliases locals rhs
             if ltype == ty then
                 if rtype == ty then
                     return $ TypedExpression ty expr
@@ -108,3 +123,5 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                  , "`, found `"
                  , show ltype
                  , "`" ]
+
+typecheckExpression _ _ _ = error "typecheckExpression: not yet implemented"

@@ -27,8 +27,8 @@ compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements)
         Nothing -> error "invalid state: missed a procedure somehow"
 
 compileStatement :: RootTable -> LocalTable -> Int -> Statement -> Either [AnalysisError] [String]
-compileStatement symbols locals rIndex (SWrite expr) = do
+compileStatement symbols locals regIndex (SWrite expr) = do
     typed <- analyseExpression (rootAliases symbols) locals expr
     return $ []
 
-compileStatement _ _ _ _ = error "not yet implemented"
+compileStatement _ _ _ _ = error "compileStatement: not yet implemented"

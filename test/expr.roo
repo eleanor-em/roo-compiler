@@ -1,0 +1,7 @@
+array[10] integer array_t;
+
+procedure main()
+    array_t x;
+{
+    write x[true];
+}

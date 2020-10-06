@@ -123,17 +123,19 @@ main = do
                 where
                     location 0 0  = ""
                     location line col = ":" <> show line <> ":" <> show col 
-                    labelError (AnalysisError line col err) = putChunksLn 
-                        [ (chunk $ pack $ progName <> location line col <> ": ")
-                            & fore white
-                        , "error: " & fore brightRed
-                        , (chunk $ pack err <> "\n") & fore white
-                        , if line > 0 then mconcat
-                              [ chunk $ pack $ raw !! (line - 1) <> "\n"
-                              , chunk $ pack $ (take (col - 1) $ cycle " ")
-                              , "^" & fore brightGreen ]
-                          else
-                              ""]
+                    labelError (AnalysisError line col err) = do
+                        putChunksLn 
+                            [ (chunk $ pack $ progName <> location line col <> ": ")
+                                & fore white
+                            , "error: " & fore brightRed
+                            , (chunk $ pack err) & fore white ]
+                        if line > 0 then do
+                            putChunksLn
+                                [ chunk $ pack $ raw !! (line - 1) <> "\n"
+                                , chunk $ pack $ (take (col - 1) $ cycle " ")
+                                , "^" & fore brightGreen ]
+                        else
+                            return ()
             Right output -> do
                 putStrLn $ concat output
                 exitSuccess
