@@ -84,9 +84,7 @@ addErrorsOr (Right val) f = f val
 
 -- | `get` for EitherState.
 getEither :: EitherState s s
-getEither = do
-    (_, current) <- get
-    return current
+getEither = gets snd
 
 -- | `put` for EitherState.
 putEither :: s -> EitherState s ()

@@ -10,7 +10,6 @@ import Oz
 
 compileProgram :: Program -> Either [AnalysisError] [String]
 compileProgram program@(Program _ _ procs) = do
-    -- Symbol table analysis
     let (errs, symbols) = getAllSymbols program
     if not (hasMain symbols) then
         Left [AnalysisError 0 0 "main procedure with no parameters missing"]
@@ -38,11 +37,9 @@ data BlockState = BlockState
     , blockNextReg :: Int }
 
 compileStatement :: RootTable -> LocalTable -> Statement -> EitherState BlockState ()
-compileStatement symbols locals (SWrite expr) = do
-    case analyseExpression (rootAliases symbols) locals expr of
-        Left errs -> addErrors errs
-        Right _   -> do
-            return ()
+compileStatement symbols locals (SWrite expr)
+    = addErrorsOr (analyseExpression (rootAliases symbols) locals expr) $ \_ -> do
+        return ()
 
 compileStatement _ _ _ = error "compileStatement: not yet implemented"
 

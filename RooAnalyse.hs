@@ -40,7 +40,7 @@ typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
 typecheckExpression :: AliasTable -> LocalTable -> Expression -> Either [AnalysisError] TypedExpr
 typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
-        Just sym -> Right $ TypedExpr (procSymType $ symType sym) expr
+        Just sym -> pure    $ TypedExpr (procSymType $ symType sym) expr
         Nothing  -> liftOne $ errorPos pos $ "unknown identifier `" <> ident <> "`"
 
 typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) indexExpr))
@@ -49,28 +49,28 @@ typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) index
             case procSymType $ symType sym of
                 TArray _ ty -> do
                     typecheckArrayIndex aliases locals indexExpr
-                    return $ TypedExpr ty expr
+                    pure $ TypedExpr ty expr
                 ty -> liftOne $ errorPos pos $ "expected array type, found `" <> show ty <> "`"
         Nothing  -> liftOne $ errorPos pos $ "unknown identifier `" <> ident <> "`"
 
 -- Literals are always well-typed.
 typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
-    LitBool   _ -> TypedExpr TBool expr
-    LitInt    _ -> TypedExpr TInt expr
+    LitBool   _ -> TypedExpr TBool   expr
+    LitInt    _ -> TypedExpr TInt    expr
     LitString _ -> TypedExpr TString expr
 
 -- Boolean negations must check whether the inner expression is boolean.
 typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
-        TBool -> return $ TypedExpr TInt expr
+        TBool -> pure    $ TypedExpr TInt expr
         ty    -> liftOne $ errorPos pos $ "expecting `boolean`, found `" <> show ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
-        TInt -> return $ TypedExpr TInt expr
+        TInt -> pure    $ TypedExpr TInt expr
         ty   -> liftOne $ errorPos pos $ "expecting `integer`, found `" <> show ty <> "`"
 
 -- For binary expressions there are three cases:
@@ -88,7 +88,7 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
         if ltype /= TString then
             if rtype /= TString then
                 if ltype == rtype then
-                    return $ TypedExpr ltype expr
+                    pure    $ TypedExpr ltype expr
                 else
                     liftOne $ errorPos lPos $ concat
                         [ "operands do not match: `"
@@ -107,7 +107,7 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
             
             if ltype == ty then
                 if rtype == ty then
-                    return $ TypedExpr ty expr
+                    pure    $ TypedExpr ty expr
                 else
                     liftOne $ errorPos rPos $ concat
                         [ "expecting `"
