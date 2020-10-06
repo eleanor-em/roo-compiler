@@ -27,7 +27,7 @@ compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements)
     case Map.lookup procName (rootProcs symbols) of
         Just (_, locals) -> do
             let compile = mapM_ (compileStatement symbols locals) statements
-            let (errs, _) = runEitherState compile (BlockState [] 0)
+            let (errs, _) = execEither compile (BlockState [] 0)
             
             (errs, [])
         Nothing ->

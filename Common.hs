@@ -1,17 +1,17 @@
 module Common where
 
+import Control.Monad.State
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
-import Control.Monad.State
 
--- | 
+-- | Concatenates a list of pairs of lists.
 concatPair ::[([a], [b])] -> ([a], [b])
 concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)) ([], [])
 
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Integer Type | TRecord RecordType
+data Type = TBool | TString | TInt | TArray Integer Type | TRecord (Map String Type)
     deriving Eq
 
 instance Show Type where
@@ -23,86 +23,77 @@ instance Show Type where
 
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Integer Type | AliasRecord RecordType
-    deriving (Show, Eq)
-
-liftAlias :: AliasType -> Type
-liftAlias (AliasArray size ty) = TArray size ty
-liftAlias (AliasRecord ty) = TRecord ty
-
-newtype RecordType = RecordType (Map String Type)
+data AliasType = AliasArray Integer Type | AliasRecord (Map String Type)
     deriving Eq
 
-instance Show RecordType where
-    show (RecordType record) = concat
+instance Show AliasType where
+    show (AliasArray size ty) = show ty <> "[" <> show size <>"]" 
+    show (AliasRecord record) = concat
         [ "record {"
         , Map.foldr (\next acc -> acc <> ", " <> show next) "" record
         , "}" ]
+
+-- | Converts an AliasType into a general Type.
+liftAlias :: AliasType -> Type
+liftAlias (AliasArray size ty) = TArray size ty
+liftAlias (AliasRecord ty) = TRecord ty
 
 -- | Represents an error during static analysis. Fields are: line, col, message
 data AnalysisError = AnalysisError Int Int String | AnalysisNote Int Int String
     deriving Show
 
--- | Creates an AnalysisError from a given SourcePos (provided by Parsec).
-fromSourcePos :: SourcePos -> String -> Either AnalysisError a
-fromSourcePos pos err = Left $ fromSourcePosRaw pos err
+-- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
+--   and wraps it in an Either.
+errorPos :: SourcePos -> String -> Either AnalysisError a
+errorPos pos err = Left $ AnalysisError (sourceLine pos)  (sourceColumn pos) err
 
-fromSourcePosRaw :: SourcePos -> String -> AnalysisError
-fromSourcePosRaw pos = AnalysisError (sourceLine pos) (sourceColumn pos)
+-- | Creates an AnalysisError from a given SourcePos with a note giving more detail
+--   at another SourcePos.
+errorWithNote :: SourcePos -> String -> SourcePos -> String -> [AnalysisError]
+errorWithNote errPos err notePos note =
+    [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
+    , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
 
-fromSourcePosNote :: SourcePos -> String -> AnalysisError
-fromSourcePosNote pos = AnalysisNote (sourceLine pos) (sourceColumn pos)
-
-
--- | Combine a list of Eithers into an Either of lists, combining the values using the given rule.
-combineErrorsWith :: (b -> b -> b) -> b -> [Either [a] b] -> Either [a] b
-combineErrorsWith fold initial list = foldr combine (Right initial) list
-    where
-        combine (Right val) (Right existing) = Right $ fold val existing
-        combine (Left errs) (Right _) = Left errs
-        combine (Left errs) (Left list) = Left $ errs <> list
-        combine (Right _)   (Left list) = Left list
-
-
--- | Map the error part of the Either. Works like a left-map.
+-- | Map the error part of the Either.
 mapErr :: (a -> c) -> Either a b -> Either c b
-mapErr f (Left err) = Left (f err)
+mapErr f (Left err)  = Left (f err)
 mapErr _ (Right val) = Right val
 
+-- | Lift a single error into a singleton list.
 liftOne :: Either a b -> Either [a] b
 liftOne = mapErr pure
-
-liftSingleVal :: Either a b -> Either a [b]
-liftSingleVal = fmap pure
-
-liftSingleBoth :: Either a b -> Either [a] [b]
-liftSingleBoth (Left err) = Left [err]
-liftSingleBoth (Right x) = Right [x]
 
 -- | If Just x is given produces a list from x, otherwise returns an empty list.
 ifJust :: Maybe a -> (a -> [b]) -> [b]
 ifJust = flip concatMap
 
+-- | Wrap the notion of a state that also keeps track of errors, with helper functions.
 type EitherState s v = State ([AnalysisError], s) v
 
+-- | Add the list of errors to the current EitherState.
 addErrors :: [AnalysisError] -> EitherState s ()
 addErrors errs = do
     (prevErrs, state) <- get
     put (prevErrs <> errs, state)
 
+-- | Add the list of errors to the current EitherState, or if there are no errors perform
+--   an action.
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val
 
+-- | `get` for EitherState.
 getEither :: EitherState s s
 getEither = do
     (_, current) <- get
     return current
 
+-- | `put` for EitherState.
 putEither :: s -> EitherState s ()
 putEither state = do
     (errs, _) <- get
     put (errs, state)
 
-runEitherState :: EitherState s () -> s -> ([AnalysisError], s)
-runEitherState state initial = execState state ([], initial)
+-- | `execState` for EitherState.
+execEither :: EitherState s () -> s -> ([AnalysisError], s)
+execEither state initial = execState state ([], initial)

@@ -116,17 +116,9 @@ data Expression
     | EUnOp UnOp LocatedExpr
     deriving (Show, Eq)
 
-data LocatedExpr = LocatedExpr SourcePos Expression
+-- | An Expression with a source location.
+data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression }
     deriving (Show, Eq)
-
-fromLocated :: LocatedExpr -> Expression
-fromLocated (LocatedExpr _ expr) = expr
-
-locate :: LocatedExpr -> SourcePos
-locate (LocatedExpr pos _) = pos
-
-unpackLocated :: LocatedExpr -> (SourcePos, Expression)
-unpackLocated (LocatedExpr pos expr) = (pos, expr)
 
 -- | A Literal node can be one of:
 --     * a boolean
@@ -178,5 +170,6 @@ instance Show Ident where
         , ":"
         , show $ sourceColumn pos ]
 
+-- | Extract the name of an identifier.
 fromIdent :: Ident -> String
-fromIdent (Ident _ ident) = ident
+fromIdent (Ident _ name) = name

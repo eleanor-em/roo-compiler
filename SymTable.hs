@@ -72,32 +72,36 @@ data ProcSymbolState = ProcSymbolState
     , psTable  :: Map String ProcSymbol
     , psParams :: [ProcSymType] }
 
+-- | Analyse a program, and return a symbol table (collecting errors as we go).
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
 getAllSymbols (Program _ arrays procs) = do
-    let (errs, arrays') = runEitherState (mapM_ symbolsArray arrays) Map.empty
+    let (errs, arrays') = execEither (mapM_ symbolsArray arrays) Map.empty
     let symbols = RootTable arrays' Map.empty
 
-    let (errs', procs') = runEitherState (mapM_ (symbolsProc symbols) procs) Map.empty    
+    let (errs', procs') = execEither (mapM_ (symbolsProc symbols) procs) Map.empty    
     let symbols = RootTable arrays' procs'
     
     (errs <> errs', symbols)
 
+-- | Looks up a possibly-aliased type and ensures it is well-formed.
 getAliasedType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
 getAliasedType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
-        Just (_, ty) -> Right $ (pos, liftAlias ty)
-        Nothing      -> liftOne $ fromSourcePos pos $
+        Just (_, ty) -> Right (pos, liftAlias ty)
+        Nothing      -> liftOne $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
 
+-- | Ensures the given type is primitive.
 getPrimitiveType :: LocatedTypeName -> Either [AnalysisError] Type
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawBoolType)) = Right TBool
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawIntType)) = Right TInt
 getPrimitiveType (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
-    liftOne $ fromSourcePos pos $
+    liftOne $ errorPos pos $
         "expecting primitive type, found `" <> name <> "`"
 
+-- | Analyse a single array type declaration and extract any symbols.
 symbolsArray :: ArrayType -> EitherState AliasTable ()
 symbolsArray (ArrayType _ size ty (Ident pos name)) = do
     table <- getEither
@@ -106,23 +110,25 @@ symbolsArray (ArrayType _ size ty (Ident pos name)) = do
     
     where
         checkExisting table = case Map.lookup name table of
-            Just (otherPos, _) ->
-                Left $ [ fromSourcePosRaw pos $ "redeclaration of type alias `" <> name <> "`"
-                       , fromSourcePosNote otherPos $ "first declared here:" ]
+            Just (otherPos, _) -> Left $
+                errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
+                              otherPos "first declared here:"
             Nothing -> do
                 ty' <- getPrimitiveType ty
-                Right $ (pos, AliasArray size ty')
+                Right (pos, AliasArray size ty')
 
 -- TODO: Records
 
+-- | Analyse a single procedure declaration and extract any symbols.
 symbolsProc :: RootTable -> Procedure -> EitherState ProcTable ()
 symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) = do
     table <- getEither
 
-    let (errs, procSymbols) = runEitherState (mapM_ (symbolsParam symbols) params) (ProcSymbolState 0 Map.empty [])
+    let initial = ProcSymbolState 0 Map.empty []
+    let (errs, procSymbols) = execEither (mapM_ (symbolsParam symbols) params) initial
     addErrors errs
 
-    let (errs, procSymbols') = runEitherState (mapM_ (symbolsDecl symbols) decls) procSymbols
+    let (errs, procSymbols') = execEither (mapM_ (symbolsDecl symbols) decls) procSymbols
     addErrors errs
 
     let params = psParams procSymbols'
@@ -130,22 +136,25 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) =
 
     -- Check if there is another procedure with this name
     addErrors $ ifJust (Map.lookup name table) $ \(otherPos, _) ->
-             [ fromSourcePosRaw pos $ "redeclaration of procedure `" <> name <> "`"
-             , fromSourcePosNote otherPos "first declared here:" ]
+                errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
+                              otherPos "first declared here:"
     addErrors errs
     
     putEither $ Map.insert name (pos, LocalTable params procs) table
 
-procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState -> Either [AnalysisError] Type
+-- | Check whether there is an existing type with this name. If not, returns the checked type.
+procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState
+    -> Either [AnalysisError] Type
 procCheckExisting symbols ty (Ident pos name) current
     = case Map.lookup name (psTable current) of
-        Just other -> let otherPos = symPos other in
-            Left $ [ fromSourcePosRaw pos $ "redeclaration of local variable `" <> name <> "`"
-                    , fromSourcePosNote otherPos $ "first declared here:" ]
+        Just other -> let otherPos = symPos other in Left $
+                errorWithNote pos      ("redeclaration of local variable `" <> name <> "`")
+                              otherPos "first declared here:"
         Nothing -> do
             (_, ty') <- getAliasedType symbols ty
             Right ty'
 
+-- | Analyse a single formal parameter declaration and extract any symbols.
 symbolsParam :: RootTable -> Parameter -> EitherState ProcSymbolState ()
 symbolsParam symbols param = do
     procSymbols <- getEither
@@ -157,6 +166,7 @@ symbolsParam symbols param = do
         let table = psTable procSymbols
         let params = psParams procSymbols
         let ty' = cons ty
+
         putEither (procSymbols
             { psTable = Map.insert name (ProcSymbol ty' loc pos) table
             , psParams = params <> [ty']
@@ -166,20 +176,22 @@ symbolsParam symbols param = do
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
             ValParam ty  (Ident pos name) -> (ValSymbol, ty, pos, name)
 
+-- | Analyse a single local variable declaration and extract any symbols.
 symbolsDecl :: RootTable -> VarDecl -> EitherState ProcSymbolState ()
 symbolsDecl symbols (VarDecl ty idents) = do
     procSymbols <- getEither
     
     let flattened = zip (repeat ty) idents
-    let (errs, procSymbols') = runEitherState (mapM_ (uncurry symbolsDeclSingle) flattened) procSymbols
+    let (errs, procSymbols') = execEither (mapM_ symbolsDeclSingle flattened) procSymbols
 
     addErrors errs
     putEither procSymbols'
 
     where
-        symbolsDeclSingle ty ident@(Ident pos name) = do
+        symbolsDeclSingle (ty, ident@(Ident pos name)) = do
             procSymbols <- getEither
             let result = procCheckExisting symbols ty ident procSymbols
+            
             addErrorsOr result $ \ty -> do
                 let loc = location procSymbols
                 let table = psTable procSymbols
