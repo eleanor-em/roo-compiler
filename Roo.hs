@@ -7,6 +7,7 @@ Assignment 1b. This program handles command-line flags and calls the appropriate
 handle the request.  
 -}
 
+-- Needed to make colour printing behave
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where 
@@ -27,6 +28,7 @@ import Common
 import RooParser
 import RooPrettyPrinter ( prettyPrint )
 import RooCompile ( compileProgram )
+import Control.Monad (when)
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -51,7 +53,7 @@ compilerFlags :: [String] -> IO ([Flag], [String])
 compilerFlags argv =
     case getOpt RequireOrder options argv of 
         (o, n, []) -> return (o, n)
-        (_, _, errs) -> fail (concat errs ++ "\n" ++ usage)
+        (_, _, errs) -> fail (concat errs <> "\n" <> usage)
     
 -- | Handling the command-line flag that was read and performing the appopriate action
 handleAst :: Flag -> ParsedAst -> IO ()
@@ -93,7 +95,7 @@ getAst progNames =
         let progName = head progNames
         fileExists <- doesFileExist progName
         if not fileExists then do
-            putStrLn $ "error: file `" ++ progName ++ "` does not exist"
+            putStrLn $ "error: file `" <> progName <> "` does not exist"
             exitFailure
         else do
             input <- readFile progName
@@ -124,33 +126,23 @@ main = do
                     location 0 0  = ""
                     location line col = ":" <> show line <> ":" <> show col 
 
-                    labelError (AnalysisError line col err) = do
+                    label line col err typeline = do
                         putChunksLn 
-                            [ (chunk $ pack $ progName <> location line col <> ": ")
+                            [ chunk (pack $ progName <> location line col <> ": ")
                                 & fore white
-                            , "error: " & fore brightRed
-                            , (chunk $ pack err) & fore white ]
-                        if line > 0 then do
-                            putChunksLn
-                                [ chunk $ pack $ raw !! (line - 1) <> "\n"
-                                , chunk $ pack $ (take (col - 1) $ cycle " ")
-                                , "^" & fore brightGreen ]
-                        else
-                            return ()
+                            , typeline
+                            , chunk (pack err) & fore white ]
+                        when (line > 0) $ putChunksLn
+                            [ chunk $ pack $ raw !! (line - 1) <> "\n"
+                            , chunk $ pack $ take (col - 1) $ cycle " "
+                            , "^" & fore brightGreen ]
 
-                    labelError (AnalysisNote line col err) = do
-                        putChunksLn 
-                            [ (chunk $ pack $ progName <> location line col <> ": ")
-                                & fore white
-                            , "note: " & fore brightCyan
-                            , (chunk $ pack err) & fore white ]
-                        if line > 0 then do
-                            putChunksLn
-                                [ chunk $ pack $ raw !! (line - 1) <> "\n"
-                                , chunk $ pack $ (take (col - 1) $ cycle " ")
-                                , "^" & fore brightGreen ]
-                        else
-                            return ()
+                    labelError (AnalysisError line col err)
+                        = label line col err $ "error: " & fore brightRed
+
+                    labelError (AnalysisNote line col err)
+                        = label line col err $ "note: " & fore brightCyan
+
             Right output -> do
                 putStrLn $ concat output
                 exitSuccess

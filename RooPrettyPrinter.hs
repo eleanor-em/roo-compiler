@@ -25,9 +25,9 @@ endline = ";\n"
 -- | Take the AST of a program and return a pretty print formatted string 
 prettyPrint :: Program -> String
 prettyPrint (Program records arrays procs) = concat
-    [ concat (map prettyRecord records)
-    , concat (map prettyArrayDecl arrays)
-    , if length records > 0 || length arrays > 0 then "\n" else ""
+    [ concatMap prettyRecord records
+    , concatMap prettyArrayDecl arrays
+    , if not (null records && null arrays) then "\n" else ""
     , intercalate "\n" (map prettyProcedure procs) ]
 
 -----------------------------------
@@ -37,23 +37,23 @@ prettyPrint (Program records arrays procs) = concat
 -- | Replaces a Record node with its pretty-printed representation 
 prettyRecord :: Record -> String
 prettyRecord (Record fields ident) = concat
-    [ "record\n" ++ indentation ++ "{ "
-    , intercalate ("\n" ++ indentation ++ "; ") $ map prettyFieldDecl fields
+    [ "record\n" <> indentation <> "{ "
+    , intercalate ("\n" <> indentation <> "; ") $ map prettyFieldDecl fields
     , "\n"
-    , indentation ++ "} " ++ (fromIdent ident) ++ endline ]
+    , indentation <> "} " <> (fromIdent ident) <> endline ]
 
 -- | Replaces an Array Declaration node with its pretty-printed representation
 prettyArrayDecl :: ArrayType -> String
 prettyArrayDecl (ArrayType _ size typeName ident) = concat
-    [ "array[" ++ show size ++ "] "
+    [ "array[" <> show size <> "] "
     , prettyType typeName
-    , " " ++ (fromIdent ident) ++ endline ]
+    , " " <> (fromIdent ident) <> endline ]
 
 -- | Replaces a Procedure node with its pretty-printed representation
 prettyProcedure :: Procedure -> String
 prettyProcedure (Procedure _ header varDecls body) = concat
     [ prettyHeader header
-    , concat (map prettyVarDecls varDecls)
+    , concatMap prettyVarDecls varDecls
     , "{\n"
     , prettyAllStatements body 1
     , "}\n" ]
@@ -73,12 +73,12 @@ prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
 
 prettyTypeInner :: TypeName -> String
 prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
-prettyTypeInner (AliasTypeName ident) = (fromIdent ident)
+prettyTypeInner (AliasTypeName ident) = fromIdent ident
 
 -- | Replaces a FieldDecl node with a string 
 prettyFieldDecl :: FieldDecl -> String 
 prettyFieldDecl (FieldDecl fieldType ident)
-    = (prettyPrimitiveType fieldType) ++ " " ++ (fromIdent ident)
+    = prettyPrimitiveType fieldType <> " " <> fromIdent ident
 
 -----------------------------------
 -- Procedure Helper Pretty Printers 
@@ -87,30 +87,30 @@ prettyFieldDecl (FieldDecl fieldType ident)
 -- | Replaces a Procedure Header node with a string represenation of the Procedure Header content
 prettyHeader :: ProcHeader -> String 
 prettyHeader (ProcHeader ident headerParams) = concat
-    [ "procedure " ++ (fromIdent ident)  ++ " "
+    [ "procedure " <> fromIdent ident  <> " "
     , prettyParens $ intercalate ", " $ map prettyParameter headerParams
     , "\n" ]
 
 -- | Replaces a Parameter node with a string representation of a Parameter
 prettyParameter :: Parameter -> String 
 prettyParameter (TypeParam typeName ident)
-    = prettyType typeName ++ " " ++ (fromIdent ident)
+    = prettyType typeName <> " " <> fromIdent ident
 
 prettyParameter (ValParam typeName ident)
-    = prettyType typeName ++ " val " ++ (fromIdent ident)
+    = prettyType typeName <> " val " <> fromIdent ident
 
 -- | Replaces a Variable Declaration node with a string represenation of the variable declarations 
 prettyVarDecls :: VarDecl -> String 
 prettyVarDecls (VarDecl typeName idents) = concat
-    [ indentation ++ prettyType typeName ++ " "
-    , intercalate ", " (map fromIdent idents)
+    [ indentation <> prettyType typeName <> " "
+    , intercalate ", " $ map fromIdent idents
     , endline ]
 
 -- | Replaces a list of Statement nodes with its pretty-printed representation, with all statements
 --   appropriately formatted
 prettyAllStatements :: [Statement] -> Int -> String
 prettyAllStatements body startingIndent
-    = concat $ map (prettyStatement startingIndent) body
+    = concatMap (prettyStatement startingIndent) body
 
 -----------------------------------
 -- Statements Pretty Printers 
@@ -120,37 +120,37 @@ prettyAllStatements body startingIndent
 --   The `Int` argument represents the current indentation level.
 prettyStatement :: Int -> Statement -> String
 prettyStatement indentLevel statement
-    = indents ++ case statement of
-        SAssign lvalue expr -> prettyLvalue lvalue ++ " <- " ++ prettyExpr (fromLocated expr)
-            ++ endline
-        SRead lvalue -> "read " ++ prettyLvalue lvalue ++ endline
-        SWrite expr -> "write " ++ prettyExpr (fromLocated expr) ++ endline
-        SWriteLn expr -> "writeln " ++ prettyExpr (fromLocated expr) ++ endline
+    = indents <> case statement of
+        SAssign lvalue expr -> prettyLvalue lvalue <> " <- " <> prettyExpr (fromLocated expr)
+            <> endline
+        SRead lvalue -> "read " <> prettyLvalue lvalue <> endline
+        SWrite expr -> "write " <> prettyExpr (fromLocated expr) <> endline
+        SWriteLn expr -> "writeln " <> prettyExpr (fromLocated expr) <> endline
         SCall ident arglist -> concat
-            [ "call " ++ (fromIdent ident)
+            [ "call " <> (fromIdent ident)
             , prettyParens (intercalate ", " $ map (prettyExpr . fromLocated) arglist)
             , endline ]
         SIf expr body -> concat
-            [ "if " ++ prettyExpr (fromLocated expr) ++ " then\n"
+            [ "if " <> prettyExpr (fromLocated expr) <> " then\n"
             , prettyAllStatements body (indentLevel + 1)
-            , indents ++ "fi\n"]
+            , indents <> "fi\n"]
         SIfElse expr ifBody elseBody -> concat
-            [ "if " ++ prettyExpr (fromLocated expr) ++ " then\n"
+            [ "if " <> prettyExpr (fromLocated expr) <> " then\n"
             , prettyAllStatements ifBody (indentLevel + 1)
-            , indents ++ "else\n"
+            , indents <> "else\n"
             , prettyAllStatements elseBody (indentLevel + 1)
-            , indents ++ "fi\n" ]
+            , indents <> "fi\n" ]
         SWhile expr body -> concat
-                [ "while " ++ prettyExpr (fromLocated expr) ++ " do\n"
+                [ "while " <> prettyExpr (fromLocated expr) <> " do\n"
                 , prettyAllStatements body (indentLevel + 1 )
-                , indents ++ "od\n" ]
+                , indents <> "od\n" ]
     where
         -- Shorthand for all of the indents we currently need
         indents = allIndents indentLevel
 
 -- | Generates a string containing `n` indentations.
 allIndents :: Int -> String
-allIndents n = concat $ take n $ cycle [indentation]
+allIndents n = concat $ replicate n indentation
 
 -----------------------------------
 -- Expression Pretty Printers 
@@ -179,7 +179,7 @@ prettyGetExpr (ELvalue lvalue) _ = prettyLvalue lvalue
 prettyGetExpr (EConst literal) _ = prettyLiteral literal
 
 -- | Basic binary operator case with no parent operator
-prettyGetExpr (EBinOp op lhs rhs) OpNone = intercalate " "
+prettyGetExpr (EBinOp op lhs rhs) OpNone = unwords
     [ prettyGetExpr (fromLocated lhs) (OpRight op)
     , prettyBinOp op
     , prettyGetExpr (fromLocated rhs) (OpLeft op) ]
@@ -201,14 +201,14 @@ prettyGetExpr expr@(EBinOp op _ _) (OpRight parentOp) = parenthesiseIf expr $
 
 -- | Dealing with unary operator precedence 
 prettyGetExpr (EUnOp op (LocatedExpr _ expr@(EBinOp innerOp _ _))) OpNone
-    = prettyUnOp op ++ (parenthesiseIf expr $ unaryHigherPrecedence op innerOp)
+    = prettyUnOp op <> (parenthesiseIf expr $ unaryHigherPrecedence op innerOp)
 
 prettyGetExpr expr@(EUnOp op _) (OpRight parentOp)
     = parenthesiseIf expr $ not $ unaryHigherPrecedence op parentOp
 
 -- | Handling the base unary operator case 
 prettyGetExpr (EUnOp op (LocatedExpr _ expr)) _
-    = prettyUnOp op ++ prettyExpr expr
+    = prettyUnOp op <> prettyExpr expr
 
 -----------------------------------
 -- Expression Helper Pretty Printers 
@@ -267,7 +267,7 @@ unaryHigherPrecedence UnNegate _ = True
 
 -- | Wrap a string with square brackets 
 prettySquares :: String -> String
-prettySquares str = '[' : (str ++ "]")
+prettySquares str = '[' : (str <> "]")
 
 -- | Replaces an `LValue` node with a string representation of the given lvalue, proceeding by cases
 -- in the natural manner
@@ -275,10 +275,10 @@ prettyLvalue :: LValue -> String
 prettyLvalue (LId ident) = (fromIdent ident)
 
 prettyLvalue (LMember memberRecord memberField) 
-    = (fromIdent memberRecord) ++ "." ++ (fromIdent memberField)
+    = (fromIdent memberRecord) <> "." <> (fromIdent memberField)
 
 prettyLvalue (LArray ident arrayIndex)
-    = (fromIdent ident) ++ prettySquares (prettyExpr (fromLocated arrayIndex))
+    = (fromIdent ident) <> prettySquares (prettyExpr (fromLocated arrayIndex))
 
 prettyLvalue (LArrayMember arrayIdent arrayMemberIndex arrayMemberField) = concat
     [ (fromIdent arrayIdent)
@@ -292,7 +292,7 @@ prettyLiteral (LitBool True) = "true"
 prettyLiteral (LitBool False) = "false"
 prettyLiteral (LitInt num) = show num
 -- the below case is a bit weird, can't use Show because that will mess up unicode characters
-prettyLiteral (LitString rawString) = '"' : (rawString ++ "\"")
+prettyLiteral (LitString rawString) = '"' : (rawString <> "\"")
     -- where 
     --     escapedQuotes = replace rawString     "\"" "\\\""
     --     escapedTabs   = replace escapedQuotes "\t" "\\t"
@@ -324,4 +324,4 @@ prettyUnOp UnNegate = "-"
 
 -- | Wrap a string with parentheses 
 prettyParens :: String -> String
-prettyParens str = '(' : (str ++ ")")
+prettyParens str = '(' : (str <> ")")

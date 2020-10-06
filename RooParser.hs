@@ -59,17 +59,27 @@ scanner = Q.makeTokenParser
     , Q.caseSensitive   = True
     })
 
+whiteSpace :: Parser ()
 whiteSpace = Q.whiteSpace scanner
+
+lexeme, parens, braces, brackets :: Parser a -> Parser a
 lexeme     = Q.lexeme scanner
+parens     = Q.parens scanner
+braces     = Q.braces scanner
+brackets   = Q.brackets scanner
+decimal :: Parser Integer
 decimal    = lexeme $ Q.decimal scanner
+
+identifier, semi, comma, dot :: Parser String
 identifier = lexeme $ Q.identifier scanner
 semi       = lexeme $ Q.semi scanner
 comma      = lexeme $ Q.comma scanner
 dot        = lexeme $ Q.dot scanner
+
+quote :: Parser Char
 quote      = char '"'
-parens     = Q.parens scanner
-braces     = Q.braces scanner
-brackets   = Q.brackets scanner
+
+reserved, reservedOp :: String -> Parser ()
 reserved   = lexeme . Q.reserved scanner
 reservedOp = Q.reservedOp scanner
 
@@ -201,8 +211,7 @@ pFormalValParam = do
     pos <- sourcePos
     typename <- pPrimitiveType
     reserved "val"
-    ident <- pIdent
-    return $ ValParam (LocatedTypeName pos $ PrimitiveTypeName typename) ident
+    ValParam (LocatedTypeName pos $ PrimitiveTypeName typename) <$> pIdent
 
 -- | Parses a variable declaration and returns a VarDecl node if accepted
 pVarDecl :: Parser VarDecl
@@ -227,8 +236,7 @@ pAssignStatement :: Parser Statement
 pAssignStatement = do
     lvalue <- pLvalue
     reservedOp "<-"
-    expr <- pExpression
-    return $ SAssign lvalue expr
+    SAssign lvalue <$> pExpression
 
 -- | Parses lvalue statements and returns an LValue node if accepted 
 pLvalue :: Parser LValue
@@ -237,14 +245,12 @@ pLvalue =
             ident1 <- pIdent
             array <- brackets pExpression
             dot
-            ident2 <- pIdent
-            return (LArrayMember ident1 array ident2))
+            LArrayMember ident1 array <$> pIdent)
     <|>
         try (do
             ident1 <- pIdent 
             dot
-            ident2 <- pIdent
-            return (LMember ident1 ident2))
+            LMember ident1 <$> pIdent)
     <|>
         try (liftA2 LArray pIdent (brackets pExpression))
     <|>
@@ -345,13 +351,11 @@ pNegatedExpr :: Parser LocatedExpr
 pNegatedExpr = do
         pos <- sourcePos
         lexeme $ char '-'
-        fac <- pFactor
-        return $ LocatedExpr pos $ EUnOp UnNegate fac
+        LocatedExpr pos . EUnOp UnNegate <$> pFactor
     <|> do
         pos <- sourcePos
         reservedOp "not"
-        fac <- pFactor
-        return $ LocatedExpr pos $ EUnOp UnNot fac
+        LocatedExpr pos . EUnOp UnNot <$> pFactor
 
 -- | Parses an lvalue expression and returns an Expression node if accepted 
 pLvalueExpr :: Parser LocatedExpr
