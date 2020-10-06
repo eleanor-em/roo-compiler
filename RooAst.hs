@@ -9,7 +9,7 @@ up the Roo Language.
 
 module RooAst where
 
-import Text.Parsec ( SourcePos, sourceLine, sourceColumn )
+import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 -- | A Roo Program node consists of: 
 -- 

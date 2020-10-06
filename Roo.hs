@@ -11,24 +11,25 @@ handle the request.
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where 
-import System.Environment ( getArgs )
-import System.Exit ( exitFailure, exitSuccess )
+
+import Control.Monad (when)
+
+import System.Environment (getArgs)
+import System.Exit (exitFailure, exitSuccess)
 import System.Console.GetOpt 
-import System.Directory ( doesFileExist )
+import System.Directory (doesFileExist)
 
 import Data.Function ((&))
 import Data.Text (pack)
 
 import Rainbow
-import Text.Parsec ( runParser )
+import Text.Parsec (runParser)
 import Text.Pretty.Simple (pPrint)
 
 import Common
-
-import RooParser
-import RooPrettyPrinter ( prettyPrint )
-import RooCompile ( compileProgram )
-import Control.Monad (when)
+import RooParser (pProgram, ParsedAst)
+import RooPrettyPrinter (prettyPrint)
+import RooCompile (compileProgram )
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -87,7 +88,7 @@ handleAst Help _ = undefined
 
 getAst :: [String] -> IO (ParsedAst, [String])
 getAst progNames = 
-    if length progNames == 0 then do
+    if not (null progNames) then do
         putStrLn "error: must provide file"
         putStr usage
         exitFailure
@@ -114,7 +115,7 @@ main :: IO ()
 main = do
     args <- getArgs
     (flags, progNames) <- compilerFlags args 
-    if length flags == 0 then do
+    if not (null flags) then do
         (ast, raw) <- getAst progNames
         -- At this point, progNames is known to be non-empty
         let progName = head progNames

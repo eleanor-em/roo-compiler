@@ -20,7 +20,7 @@ import Text.Parsec.Language (emptyDef)
 import Text.Parsec.Expr
 import qualified Text.Parsec.Token as Q
 
-import Data.Functor ( ($>) )
+import Data.Functor (($>))
 
 type Parser a = Parsec String Int a
 

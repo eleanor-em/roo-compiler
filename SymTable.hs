@@ -39,7 +39,7 @@ instance Show ProcSymbol where
 --   parameters in order, and a table of procedure symbols.
 data LocalTable = LocalTable
     { localParams :: [ProcSymType]
-    , localSymbols :: (Map String ProcSymbol) }
+    , localSymbols :: Map String ProcSymbol }
 
 instance Show LocalTable where
     show (LocalTable params syms) = concat
