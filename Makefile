@@ -3,7 +3,7 @@ PACKAGE = -package parsec -package mtl
 
 all: Roo
 
-Roo: *.hs
+Roo: Common.hs Oz.hs Roo.hs RooAnalyse.hs RooAst.hs RooCompile.hs RooParser.hs RooPrettyPrinter.hs SymTable.hs
 	ghc Roo.hs -o Roo $(PACKAGE) $(FLAGS)
 
 clean:
