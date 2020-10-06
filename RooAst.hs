@@ -9,7 +9,7 @@ up the Roo Language.
 
 module RooAst where
 
-import Text.Parsec ( SourcePos )
+import Text.Parsec ( SourcePos, sourceLine, sourceColumn )
 
 -- | A Roo Program node consists of: 
 -- 
@@ -167,4 +167,16 @@ data LValue
     deriving (Show, Eq)
 
 -- | Identifier is a non empty sequence of chars (or String)
-type Ident = String
+data Ident = Ident SourcePos String
+    deriving Eq
+
+instance Show Ident where
+    show (Ident pos ident) = concat
+        [ show $ ident
+        , ":"
+        , show $ sourceLine pos
+        , ":"
+        , show $ sourceColumn pos ]
+
+fromIdent :: Ident -> String
+fromIdent (Ident _ ident) = ident

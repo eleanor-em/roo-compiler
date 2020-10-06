@@ -121,14 +121,19 @@ main = do
                     mapM_ labelError errs
                     exitFailure
                 where
+                    location 0 0  = ""
+                    location line col = ":" <> show line <> ":" <> show col 
                     labelError (AnalysisError line col err) = putChunksLn 
-                        [ (chunk $ pack $ progName <> ":" <> show line <> ":" <> show col <> ": ")
+                        [ (chunk $ pack $ progName <> location line col <> ": ")
                             & fore white
                         , "error: " & fore brightRed
                         , (chunk $ pack err <> "\n") & fore white
-                        , chunk $ pack $ raw !! (line - 1) <> "\n"
-                        , chunk $ pack $ (take (col - 1) $ cycle " ")
-                        , "^" & fore brightGreen]
+                        , if line > 0 then mconcat
+                              [ chunk $ pack $ raw !! (line - 1) <> "\n"
+                              , chunk $ pack $ (take (col - 1) $ cycle " ")
+                              , "^" & fore brightGreen ]
+                          else
+                              ""]
             Right output -> do
                 putStrLn $ concat output
                 exitSuccess

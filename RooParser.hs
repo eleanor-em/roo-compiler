@@ -132,7 +132,8 @@ pProcedure = do
 
 -- | Parses an identifier and returns an Ident node if accepted
 pIdent :: Parser Ident
-pIdent = lexeme identifier <?> "identifier"
+pIdent = liftA2 Ident sourcePos (lexeme identifier)
+    <?> "identifier"
 
 -- | Parses a field declaration and returns a FieldDecl node if accepted
 pFieldDecl :: Parser FieldDecl

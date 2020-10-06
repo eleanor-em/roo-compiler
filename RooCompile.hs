@@ -1,5 +1,7 @@
 module RooCompile where
 
+import qualified Data.Map.Strict as Map
+
 import Common
 import RooAnalyse
 import RooAst
@@ -9,18 +11,24 @@ compileProgram :: Program -> Either [AnalysisError] [String]
 compileProgram program@(Program _ arrays procs) = do
     -- Symbol table analysis
     symbols <- getAllSymbols program
-    seq (unsafePrintSymbols symbols) $ do
-        ozProcs <- combineErrors [] $ map compileProc procs
+    if not $ hasMain (rootProcs symbols) then
+        Left [AnalysisError 0 0 "main procedure with no parameters missing"]
+    else do
+        -- seq (unsafePrintSymbols symbols) $ do
+        ozProcs <- combineErrors [] $ map (compileProc symbols) procs
         return $ concat [ozProcs]
 
-compileProc :: Procedure -> Either [AnalysisError] [String]
-compileProc (Procedure _ _ _ statements) = do
-    ozStatements <- combineErrors [] $ map (compileStatement 0) statements
-    return $ concat [ozStatements]
+compileProc :: RootTable -> Procedure -> Either [AnalysisError] [String]
+compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
+    case Map.lookup procName (rootProcs symbols) of
+        Just (_, locals) -> do
+            ozStatements <- combineErrors [] $ map (compileStatement symbols locals 0) statements
+            return $ concat [ozStatements]
+        Nothing -> error "invalid state: missed a procedure somehow"
 
-compileStatement :: Int -> Statement -> Either [AnalysisError] [String]
-compileStatement rIndex (SWrite expr) = do
-    typed <- analyseExpression expr
+compileStatement :: RootTable -> LocalTable -> Int -> Statement -> Either [AnalysisError] [String]
+compileStatement symbols locals rIndex (SWrite expr) = do
+    typed <- analyseExpression (rootAliases symbols) locals expr
     return $ []
 
-compileStatement _ _ = error "not yet implemented"
+compileStatement _ _ _ _ = error "not yet implemented"

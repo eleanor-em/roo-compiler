@@ -40,14 +40,14 @@ prettyRecord (Record fields ident) = concat
     [ "record\n" ++ indentation ++ "{ "
     , intercalate ("\n" ++ indentation ++ "; ") $ map prettyFieldDecl fields
     , "\n"
-    , indentation ++ "} " ++ ident ++ endline ]
+    , indentation ++ "} " ++ (fromIdent ident) ++ endline ]
 
 -- | Replaces an Array Declaration node with its pretty-printed representation
 prettyArrayDecl :: ArrayType -> String
 prettyArrayDecl (ArrayType _ size typeName ident) = concat
     [ "array[" ++ show size ++ "] "
     , prettyType typeName
-    , " " ++ ident ++ endline ]
+    , " " ++ (fromIdent ident) ++ endline ]
 
 -- | Replaces a Procedure node with its pretty-printed representation
 prettyProcedure :: Procedure -> String
@@ -73,12 +73,12 @@ prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
 
 prettyTypeInner :: TypeName -> String
 prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
-prettyTypeInner (AliasTypeName ident) = ident
+prettyTypeInner (AliasTypeName ident) = (fromIdent ident)
 
 -- | Replaces a FieldDecl node with a string 
 prettyFieldDecl :: FieldDecl -> String 
-prettyFieldDecl (FieldDecl fieldType fieldIdent)
-    = (prettyPrimitiveType fieldType) ++ " " ++ fieldIdent
+prettyFieldDecl (FieldDecl fieldType ident)
+    = (prettyPrimitiveType fieldType) ++ " " ++ (fromIdent ident)
 
 -----------------------------------
 -- Procedure Helper Pretty Printers 
@@ -86,24 +86,24 @@ prettyFieldDecl (FieldDecl fieldType fieldIdent)
 
 -- | Replaces a Procedure Header node with a string represenation of the Procedure Header content
 prettyHeader :: ProcHeader -> String 
-prettyHeader (ProcHeader procName headerParams) = concat
-    [ "procedure " ++ procName  ++ " "
+prettyHeader (ProcHeader ident headerParams) = concat
+    [ "procedure " ++ (fromIdent ident)  ++ " "
     , prettyParens $ intercalate ", " $ map prettyParameter headerParams
     , "\n" ]
 
 -- | Replaces a Parameter node with a string representation of a Parameter
 prettyParameter :: Parameter -> String 
 prettyParameter (TypeParam typeName ident)
-    = prettyType typeName ++ " " ++ ident
+    = prettyType typeName ++ " " ++ (fromIdent ident)
 
 prettyParameter (ValParam typeName ident)
-    = prettyType typeName ++ " val " ++ ident
+    = prettyType typeName ++ " val " ++ (fromIdent ident)
 
 -- | Replaces a Variable Declaration node with a string represenation of the variable declarations 
 prettyVarDecls :: VarDecl -> String 
-prettyVarDecls (VarDecl typeName varIdents) = concat
+prettyVarDecls (VarDecl typeName idents) = concat
     [ indentation ++ prettyType typeName ++ " "
-    , intercalate ", " varIdents
+    , intercalate ", " (map fromIdent idents)
     , endline ]
 
 -- | Replaces a list of Statement nodes with its pretty-printed representation, with all statements
@@ -127,7 +127,7 @@ prettyStatement indentLevel statement
         SWrite expr -> "write " ++ prettyExpr (fromLocated expr) ++ endline
         SWriteLn expr -> "writeln " ++ prettyExpr (fromLocated expr) ++ endline
         SCall ident arglist -> concat
-            [ "call " ++ ident
+            [ "call " ++ (fromIdent ident)
             , prettyParens (intercalate ", " $ map (prettyExpr . fromLocated) arglist)
             , endline ]
         SIf expr body -> concat
@@ -272,19 +272,19 @@ prettySquares str = '[' : (str ++ "]")
 -- | Replaces an `LValue` node with a string representation of the given lvalue, proceeding by cases
 -- in the natural manner
 prettyLvalue :: LValue -> String
-prettyLvalue (LId ident) = ident
+prettyLvalue (LId ident) = (fromIdent ident)
 
 prettyLvalue (LMember memberRecord memberField) 
-    = memberRecord ++ "." ++ memberField
+    = (fromIdent memberRecord) ++ "." ++ (fromIdent memberField)
 
-prettyLvalue (LArray arrayIdent arrayIndex)
-    = arrayIdent ++ prettySquares (prettyExpr (fromLocated arrayIndex))
+prettyLvalue (LArray ident arrayIndex)
+    = (fromIdent ident) ++ prettySquares (prettyExpr (fromLocated arrayIndex))
 
 prettyLvalue (LArrayMember arrayIdent arrayMemberIndex arrayMemberField) = concat
-    [ arrayIdent
+    [ (fromIdent arrayIdent)
     , prettySquares (prettyExpr (fromLocated arrayMemberIndex))
     , "."
-    , arrayMemberField ]
+    , (fromIdent arrayMemberField) ]
 
 -- | Replaces a `Literal` node with a pretty-printed representation of the given literal 
 prettyLiteral :: Literal -> String

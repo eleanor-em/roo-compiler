@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FlexibleContexts #-}
 
-module SymTable(getAllSymbols, unsafePrintSymbols) where
+module SymTable where
 
 import Control.Monad.State
 
@@ -18,6 +18,10 @@ import RooAst
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
     deriving Eq
+
+procSymType :: ProcSymType -> Type
+procSymType (ValSymbol ty) = ty
+procSymType (RefSymbol ty) = ty
 
 instance Show ProcSymType where
     show (ValSymbol ty) = show ty ++ " val"
@@ -40,7 +44,7 @@ instance Show ProcSymbol where
 
 -- | Represents a local symbol table for a procedure. Contains the types and ref/val status of
 --   parameters in order, and a table of procedure symbols.
-data LocalTable = LocalTable [ProcSymType] (Map String ProcSymbol)
+data LocalTable = LocalTable { localParams :: [ProcSymType], localSymbols :: (Map String ProcSymbol) }
 instance Show LocalTable where
     show (LocalTable params syms) = concat
         [ "params: { "
@@ -115,15 +119,15 @@ getAliasedType :: RootTable -> LocatedTypeName -> Either AnalysisError (SourcePo
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
 getAliasedType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName name)) =
-    case Map.lookup name aliases of
+    case Map.lookup (fromIdent name) aliases of
         Just (_, ty) -> Right $ (pos, liftAlias ty)
-        Nothing      -> fromSourcePos pos $ "unrecognised type alias `" ++ name ++ "`"
+        Nothing      -> fromSourcePos pos $ "unrecognised type alias `" ++ (fromIdent name) ++ "`"
 
 getPrimitiveType :: LocatedTypeName -> Either AnalysisError Type
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawBoolType)) = Right TBool
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawIntType)) = Right TInt
 getPrimitiveType (LocatedTypeName pos (AliasTypeName name)) =
-    fromSourcePos pos $ "expecting primitive type, found `" ++ name ++ "`"
+    fromSourcePos pos $ "expecting primitive type, found `" ++ (fromIdent name) ++ "`"
 
 symbolsArray :: ArrayType -> State AliasSymbolState ()
 symbolsArray (ArrayType pos size ty name) = do
@@ -135,13 +139,13 @@ symbolsArray (ArrayType pos size ty name) = do
             put (current { asErrors = errs })
         Right val -> do
             let table = asTable current
-            put (current { asTable = Map.insert name val table })
+            put (current { asTable = Map.insert (fromIdent name) val table })
     
     where
-        checkExisting current = case Map.lookup name (asTable current) of
+        checkExisting current = case Map.lookup (fromIdent name) (asTable current) of
             Just (otherPos, _) -> fromSourcePos pos $ concat
                     [ "type alias named `"
-                    , name
+                    , (fromIdent name)
                     , "` already exists at line "
                     , show $ sourceLine otherPos
                     , ", column "
@@ -166,11 +170,11 @@ symbolsProc symbols (Procedure pos (ProcHeader name params) decls _) = do
     let table = psTable state'
 
     -- Check if there is another procedure with this name
-    case Map.lookup name parent of
+    case Map.lookup (fromIdent name) parent of
         Just (otherPos, _) -> do
             let err = fromSourcePosRaw pos $ concat
                     [ "procedure named `"
-                    , name
+                    , (fromIdent name)
                     , "` already exists at line "
                     , show $ sourceLine otherPos
                     , ", column "
@@ -178,7 +182,7 @@ symbolsProc symbols (Procedure pos (ProcHeader name params) decls _) = do
             put (current { rpsErrors = prevErrs ++ [err] ++ errs })
 
         Nothing -> put (current
-            { rpsTable = Map.insert name (pos, LocalTable params table) parent
+            { rpsTable = Map.insert (fromIdent name) (pos, LocalTable params table) parent
             , rpsErrors = prevErrs ++ errs })
 
 procCheckExisting :: RootTable -> LocatedTypeName -> String -> ProcSymbolState -> Either AnalysisError (SourcePos, Type)
@@ -202,7 +206,7 @@ procCheckExisting symbols ty name current = case Map.lookup name (psTable curren
 symbolsParam :: RootTable -> Parameter -> State ProcSymbolState ()
 symbolsParam symbols param = do
     current <- get
-    case procCheckExisting symbols ty name current of
+    case procCheckExisting symbols ty (fromIdent name) current of
         Left err -> do
             let errs = (psErrors current) ++ [err]
             put (current { psErrors = errs })
@@ -213,7 +217,7 @@ symbolsParam symbols param = do
             let params = psParams current
             let ty'' = cons ty'
             put (current
-                { psTable = Map.insert name (ProcSymbol ty'' loc pos) table
+                { psTable = Map.insert (fromIdent name) (ProcSymbol ty'' loc pos) table
                 , psParams = params ++ [ty'']
                 , location = loc + 1 })
 
@@ -225,7 +229,7 @@ symbolsParam symbols param = do
 symbolsDecl :: RootTable -> VarDecl -> State ProcSymbolState ()
 symbolsDecl symbols (VarDecl ty names) = do
     current <- get
-    let flattened = zip (cycle [ty]) names
+    let flattened = zip (cycle [ty]) (map fromIdent names)
     let (_, final) = runState (mapM (uncurry $ symbolsDeclSingle symbols) flattened) current
     put final
 
