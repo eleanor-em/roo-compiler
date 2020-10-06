@@ -123,11 +123,26 @@ main = do
                 where
                     location 0 0  = ""
                     location line col = ":" <> show line <> ":" <> show col 
+
                     labelError (AnalysisError line col err) = do
                         putChunksLn 
                             [ (chunk $ pack $ progName <> location line col <> ": ")
                                 & fore white
                             , "error: " & fore brightRed
+                            , (chunk $ pack err) & fore white ]
+                        if line > 0 then do
+                            putChunksLn
+                                [ chunk $ pack $ raw !! (line - 1) <> "\n"
+                                , chunk $ pack $ (take (col - 1) $ cycle " ")
+                                , "^" & fore brightGreen ]
+                        else
+                            return ()
+
+                    labelError (AnalysisNote line col err) = do
+                        putChunksLn 
+                            [ (chunk $ pack $ progName <> location line col <> ": ")
+                                & fore white
+                            , "note: " & fore brightCyan
                             , (chunk $ pack err) & fore white ]
                         if line > 0 then do
                             putChunksLn

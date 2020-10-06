@@ -1,5 +1,3 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FlexibleContexts #-}
-
 module SymTable where
 
 import Control.Monad.State
@@ -84,72 +82,60 @@ data ProcSymbolState = ProcSymbolState
     , psTable  :: Map String ProcSymbol
     , psParams :: [ProcSymType] }
 
--- | Because our states contain errors, we define a helper class to extract the errors
---   if they exist. If not, there is some defined value i.e. the produced table.
-class EitherState e v a where
-    stateResult :: a -> Either [e] v
-
-instance EitherState AnalysisError AliasTable AliasSymbolState where
+instance EitherState AliasTable AliasSymbolState where
     stateResult state
         | length (asErrors state) > 0 = Left (asErrors state)
         | otherwise = Right (asTable state)
 
-instance EitherState AnalysisError ProcTable RootProcSymbolState where
+instance EitherState ProcTable RootProcSymbolState where
     stateResult state
         | length (rpsErrors state) > 0 = Left (rpsErrors state)
         | otherwise = Right (rpsTable state)
 
--- | Analogous to runState, except it produces an Either representing errors or the final value.
-runEitherState :: EitherState e v s => State s a -> s -> Either [e] v
-runEitherState state initial = do
-    let (_, val) = runState state initial
-    stateResult val
-
 getAllSymbols :: Program -> Either [AnalysisError] RootTable
 getAllSymbols (Program _ arrays procs) = do
-    aliases <- runEitherState (mapM_ symbolsArray arrays) (AliasSymbolState [] Map.empty)
+    let aliasResult = runEitherState (mapM_ symbolsArray arrays) (AliasSymbolState [] Map.empty)
+    (aliases, errs) <- case aliasResult of
+        Left aliasErrs -> Right (Map.empty, aliasErrs)
+        Right values   -> Right (values, [])
     
     let symbols = RootTable aliases Map.empty
-    procs' <- runEitherState (mapM_ (symbolsProc symbols) procs) (RootProcSymbolState [] Map.empty)
+    procs' <- runEitherState (mapM_ (symbolsProc symbols) procs) (RootProcSymbolState errs Map.empty)
     
     let symbols' = RootTable aliases procs'
     return symbols'
 
-getAliasedType :: RootTable -> LocatedTypeName -> Either AnalysisError (SourcePos, Type)
+getAliasedType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
 getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
 getAliasedType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName name)) =
     case Map.lookup (fromIdent name) aliases of
         Just (_, ty) -> Right $ (pos, liftAlias ty)
-        Nothing      -> fromSourcePos pos $ "unrecognised type alias `" ++ (fromIdent name) ++ "`"
+        Nothing      -> liftSingleErr $ fromSourcePos pos $ "unrecognised type alias `" ++ (fromIdent name) ++ "`"
 
-getPrimitiveType :: LocatedTypeName -> Either AnalysisError Type
+getPrimitiveType :: LocatedTypeName -> Either [AnalysisError] Type
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawBoolType)) = Right TBool
 getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawIntType)) = Right TInt
 getPrimitiveType (LocatedTypeName pos (AliasTypeName name)) =
-    fromSourcePos pos $ "expecting primitive type, found `" ++ (fromIdent name) ++ "`"
+    liftSingleErr $ fromSourcePos pos $ "expecting primitive type, found `" ++ (fromIdent name) ++ "`"
 
 symbolsArray :: ArrayType -> State AliasSymbolState ()
-symbolsArray (ArrayType pos size ty name) = do
+symbolsArray (ArrayType _ size ty (Ident pos name)) = do
     current <- get
 
     case checkExisting current of
-        Left err -> do
-            let errs = (asErrors current) ++ [err]
-            put (current { asErrors = errs })
+        Left errs -> do
+            let errs' = (asErrors current) ++ errs
+            put (current { asErrors = errs' })
         Right val -> do
             let table = asTable current
-            put (current { asTable = Map.insert (fromIdent name) val table })
+            put (current { asTable = Map.insert name val table })
     
     where
-        checkExisting current = case Map.lookup (fromIdent name) (asTable current) of
-            Just (otherPos, _) -> fromSourcePos pos $ concat
-                    [ "type alias named `"
-                    , (fromIdent name)
-                    , "` already exists at line "
-                    , show $ sourceLine otherPos
-                    , ", column "
-                    , show $ sourceColumn otherPos ]
+        checkExisting current = case Map.lookup name (asTable current) of
+            Just (otherPos, _) ->
+                Left $ [ fromSourcePosRaw pos $ "redeclaration of type alias `" ++ name ++ "`"
+                       , fromSourcePosNote otherPos $ "first declared here:" ]
             Nothing -> do
                 ty' <- getPrimitiveType ty
                 Right $ (pos, AliasArray size ty')
@@ -157,7 +143,7 @@ symbolsArray (ArrayType pos size ty name) = do
 -- TODO: Records
 
 symbolsProc :: RootTable -> Procedure -> State RootProcSymbolState ()
-symbolsProc symbols (Procedure pos (ProcHeader name params) decls _) = do
+symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) = do
     current <- get
     let parent = rpsTable current
     let prevErrs = rpsErrors current
@@ -170,80 +156,67 @@ symbolsProc symbols (Procedure pos (ProcHeader name params) decls _) = do
     let table = psTable state'
 
     -- Check if there is another procedure with this name
-    case Map.lookup (fromIdent name) parent of
+    case Map.lookup name parent of
         Just (otherPos, _) -> do
-            let err = fromSourcePosRaw pos $ concat
-                    [ "procedure named `"
-                    , (fromIdent name)
-                    , "` already exists at line "
-                    , show $ sourceLine otherPos
-                    , ", column "
-                    , show $ sourceColumn otherPos ]
-            put (current { rpsErrors = prevErrs ++ [err] ++ errs })
+            let newErrs =
+                    [ fromSourcePosRaw pos $ "redeclaration of procedure `" ++ name ++ "`"
+                    , fromSourcePosNote otherPos $ "first declared here:" ]
+            put (current { rpsErrors = prevErrs ++ newErrs ++ errs })
 
         Nothing -> put (current
-            { rpsTable = Map.insert (fromIdent name) (pos, LocalTable params table) parent
+            { rpsTable = Map.insert name (pos, LocalTable params table) parent
             , rpsErrors = prevErrs ++ errs })
 
-procCheckExisting :: RootTable -> LocatedTypeName -> String -> ProcSymbolState -> Either AnalysisError (SourcePos, Type)
-procCheckExisting symbols ty name current = case Map.lookup name (psTable current) of
+procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState -> Either [AnalysisError] Type
+procCheckExisting symbols ty (Ident pos name) current = case Map.lookup name (psTable current) of
     Just other -> let otherPos = symPos other in
-        fromSourcePos pos $ concat
-            [ "local variable named `"
-            , name
-            , "` already exists at line "
-            , show $ sourceLine otherPos
-            , ", column "
-            , show $ sourceColumn otherPos ]
+        Left $ [ fromSourcePosRaw pos $ "redeclaration of local variable `" ++ name ++ "`"
+               , fromSourcePosNote otherPos $ "first declared here:" ]
     Nothing -> do
-        ty' <- getAliasedType symbols ty
+        (_, ty') <- getAliasedType symbols ty
         Right ty'
-
-    where
-        pos = getTypePos ty
-
 
 symbolsParam :: RootTable -> Parameter -> State ProcSymbolState ()
 symbolsParam symbols param = do
     current <- get
-    case procCheckExisting symbols ty (fromIdent name) current of
-        Left err -> do
-            let errs = (psErrors current) ++ [err]
-            put (current { psErrors = errs })
+    case procCheckExisting symbols ty (Ident pos name) current of
+        Left errs -> do
+            let errs' = (psErrors current) ++ errs
+            put (current { psErrors = errs' })
 
-        Right (pos, ty') -> do
+        Right ty' -> do
             let loc = location current
             let table = psTable current
             let params = psParams current
             let ty'' = cons ty'
             put (current
-                { psTable = Map.insert (fromIdent name) (ProcSymbol ty'' loc pos) table
+                { psTable = Map.insert name (ProcSymbol ty'' loc pos) table
                 , psParams = params ++ [ty'']
                 , location = loc + 1 })
 
     where
-        (cons, ty, name) = case param of
-            TypeParam ty name -> (RefSymbol, ty, name)
-            ValParam ty name -> (ValSymbol, ty, name)
+        (cons, ty, pos, name) = case param of
+            TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
+            ValParam ty  (Ident pos name) -> (ValSymbol, ty, pos, name)
 
 symbolsDecl :: RootTable -> VarDecl -> State ProcSymbolState ()
-symbolsDecl symbols (VarDecl ty names) = do
+symbolsDecl symbols (VarDecl ty idents) = do
     current <- get
-    let flattened = zip (cycle [ty]) (map fromIdent names)
-    let (_, final) = runState (mapM (uncurry $ symbolsDeclSingle symbols) flattened) current
+    let flattened = zip (cycle [ty]) idents
+    let (_, final) = runState (mapM (uncurry symbolsDeclSingle) flattened) current
     put final
 
     where
-        symbolsDeclSingle symbols ty name = do
+        symbolsDeclSingle ty ident@(Ident pos name) = do
             current <- get
-            case procCheckExisting symbols ty name current of
-                Left err -> do
-                    let errs = (psErrors current) ++ [err]
-                    put (current { psErrors = errs })
+            case procCheckExisting symbols ty ident current of
+                Left errs -> do
+                    let errs' = (psErrors current) ++ errs
+                    put (current { psErrors = errs' })
 
-                Right (pos, ty') -> do
+                Right ty -> do
                     let loc = location current
                     let table = psTable current
                     put (current
-                        { psTable = Map.insert name (ProcSymbol (ValSymbol ty') loc pos) table
+                        { psTable = Map.insert name (ProcSymbol (ValSymbol ty) loc pos) table
                         , location = loc + 1 })

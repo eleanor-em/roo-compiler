@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 {-|
 Module      : RooParser
 Description : Parses a Roo Program and returns a Roo AST   

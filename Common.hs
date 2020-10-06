@@ -4,6 +4,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
+import Control.Monad.State
 
 enumerate :: [b] -> [(Int, b)]
 enumerate = zip [0..]
@@ -44,7 +45,7 @@ instance Show RecordType where
         , "}" ]
 
 -- | Represents an error during static analysis. Fields are: line, col, message
-data AnalysisError = AnalysisError Int Int String
+data AnalysisError = AnalysisError Int Int String | AnalysisNote Int Int String
     deriving Show
 
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec).
@@ -54,15 +55,16 @@ fromSourcePos pos err = Left $ fromSourcePosRaw pos err
 fromSourcePosRaw :: SourcePos -> String -> AnalysisError
 fromSourcePosRaw pos err = AnalysisError (sourceLine pos) (sourceColumn pos) err
 
--- | Combine a list of Eithers into an Either of lists.
-combineErrors :: Foldable t => b -> t (Either [a] b) -> Either [a] b
-combineErrors initial =  combineErrorsWith initial (flip const)
+fromSourcePosNote :: SourcePos -> String -> AnalysisError
+fromSourcePosNote pos err = AnalysisNote (sourceLine pos) (sourceColumn pos) err
 
-combineErrorsWith :: Foldable t => b -> (b -> b -> b) -> t (Either [a] b) -> Either [a] b
-combineErrorsWith initial fold list = foldr combine (Right initial) list
+
+-- | Combine a list of Eithers into an Either of lists, combining the values using the given rule.
+combineErrorsWith :: (b -> b -> b) -> b -> [(Either [a] b)] -> Either [a] b
+combineErrorsWith fold initial list = foldr combine (Right initial) list
     where
         combine (Right val) (Right existing) = Right $ fold val existing
-        combine (Left errs) (Right val) = Left errs
+        combine (Left errs) (Right _) = Left errs
         combine (Left errs) (Left list) = Left $ errs ++ list
         combine (Right _)   (Left list) = Left list
 
@@ -81,3 +83,14 @@ liftSingleVal = fmap pure
 liftSingleBoth :: Either a b -> Either [a] [b]
 liftSingleBoth (Left err) = Left [err]
 liftSingleBoth (Right x) = Right [x]
+
+-- | Because our states contain errors, we define a helper class to extract the errors
+--   if they exist. If not, there is some defined value i.e. the produced table.
+class EitherState v a where
+    stateResult :: a -> Either [AnalysisError] v
+
+-- | Analogous to runState, except it produces an Either representing errors or the final value.
+runEitherState :: EitherState v s => State s a -> s -> Either [AnalysisError] v
+runEitherState state initial = do
+    let (_, val) = runState state initial
+    stateResult val

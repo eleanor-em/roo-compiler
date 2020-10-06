@@ -8,8 +8,8 @@ import RooAst
 import RooPrettyPrinter (prettyBinOp)
 import SymTable
 
-hasMain :: ProcTable -> Bool
-hasMain procs = case Map.lookup "main" procs of
+hasMain :: RootTable -> Bool
+hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
     Just (_, prc) -> length (localParams prc) == 0
     Nothing       -> False
 
@@ -47,7 +47,7 @@ typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) index
                 TArray _ ty -> do
                     typecheckArrayIndex aliases locals indexExpr
                     return $ TypedExpression ty expr
-                ty ->  fromSourcePos pos $ "expected array type, found `" ++ show ty ++ "`"
+                ty -> fromSourcePos pos $ "expected array type, found `" ++ show ty ++ "`"
         Nothing  -> fromSourcePos pos $ "unknown identifier `" ++ ident ++ "`"
 
 -- Literals are always well-typed.

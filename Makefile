@@ -1,4 +1,4 @@
-FLAGS = -Wall -O2 -XOverloadedStrings
+FLAGS = -Wall -O2 -XOverloadedStrings -XMultiParamTypeClasses -XFlexibleInstances -XFlexibleContexts -fno-warn-name-shadowing -fno-warn-unused-do-bind
 PACKAGE = -package parsec -package mtl
 
 all: Roo
