@@ -104,23 +104,25 @@ pRecord = do
 -- | Parses an arrayType declaration and returns an ArrayType node if accepted 
 pArrayType :: Parser ArrayType 
 pArrayType = do
+        pos <- sourcePos
         reserved "array"
         numElems <- brackets $ pPositiveInt
         typeName <- pTypeName
         ident <- pIdent 
         semi
-        return (ArrayType numElems typeName ident)
+        return (ArrayType pos numElems typeName ident)
     <?>
         "array type"
 
 -- | Parses a procedure and returns a Procedure node if accepted 
 pProcedure :: Parser Procedure
 pProcedure = do
+        pos <- sourcePos
         reserved "procedure"
         header <- pHeader
         varDecls <- many pVarDecl
         body <- braces (many1 pStatement)
-        return $ Procedure header varDecls body
+        return $ Procedure pos header varDecls body
     <?>
         "procedure"
 
@@ -137,8 +139,11 @@ pFieldDecl :: Parser FieldDecl
 pFieldDecl = liftA2 FieldDecl pPrimitiveType pIdent
 
 -- | Parses a type name and returns a TypeName node if accepted 
-pTypeName :: Parser TypeName
-pTypeName =
+pTypeName :: Parser LocatedTypeName
+pTypeName = liftA2 LocatedTypeName sourcePos pTypeNameInner
+
+pTypeNameInner :: Parser TypeName
+pTypeNameInner =
         AliasTypeName <$> pIdent
     <|>
         PrimitiveTypeName <$> pPrimitiveType
@@ -191,10 +196,11 @@ pFormalTypeParam = liftA2 TypeParam pTypeName pIdent
 -- | Parses a formal val type paramter and returns a Parameter node if accepted   
 pFormalValParam :: Parser Parameter
 pFormalValParam = do
+    pos <- sourcePos
     typename <- pPrimitiveType
     reserved "val"
     ident <- pIdent
-    return $ ValParam (PrimitiveTypeName typename) ident
+    return $ ValParam (LocatedTypeName pos $ PrimitiveTypeName typename) ident
 
 -- | Parses a variable declaration and returns a VarDecl node if accepted
 pVarDecl :: Parser VarDecl

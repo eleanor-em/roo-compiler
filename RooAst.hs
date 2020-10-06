@@ -33,7 +33,7 @@ data Record = Record
 --     1. an integer 
 --     2. a type name 
 --     3. an identifier 
-data ArrayType = ArrayType Integer TypeName Ident
+data ArrayType = ArrayType SourcePos Integer LocatedTypeName Ident
     deriving (Show, Eq)
 
 -- | A Procedure node consists of:
@@ -41,7 +41,7 @@ data ArrayType = ArrayType Integer TypeName Ident
 --     1. a procedure header 
 --     2. a list of local variable declarations
 --     3. a list of statements 
-data Procedure = Procedure ProcHeader [VarDecl] [Statement]
+data Procedure = Procedure SourcePos ProcHeader [VarDecl] [Statement]
     deriving (Show, Eq)
 
 -- | A Procedure Header node consists of:
@@ -66,16 +66,22 @@ data PrimitiveType = RawBoolType | RawIntType
 -- 
 --     1. a type name
 --     2. a non-empty list of identifiers 
-data VarDecl = VarDecl TypeName [Ident]
+data VarDecl = VarDecl LocatedTypeName [Ident]
     deriving (Show, Eq)
 
 -- | A Parameter Type node can either be a Type Name or a Type Val
-data Parameter = TypeParam TypeName Ident | ValParam TypeName Ident
+data Parameter = TypeParam LocatedTypeName Ident | ValParam LocatedTypeName Ident
     deriving (Show, Eq)
 
 -- | A Type Name node can either by a Primitive Type or a type Alias 
 data TypeName = PrimitiveTypeName PrimitiveType | AliasTypeName Ident
     deriving (Show, Eq)
+
+data LocatedTypeName = LocatedTypeName SourcePos TypeName
+    deriving (Show, Eq)
+
+getTypePos :: LocatedTypeName -> SourcePos
+getTypePos (LocatedTypeName pos _) = pos
 
 -- | A Statement node can be one of the following forms:
 --

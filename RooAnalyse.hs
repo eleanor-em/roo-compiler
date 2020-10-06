@@ -2,37 +2,10 @@ module RooAnalyse where
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
+import Common
+
 import RooAst
 import RooPrettyPrinter (prettyBinOp)
-
--- | Represents an error during static analysis. Fields are: line, col, message
-data AnalysisError = AnalysisError Int Int String
-
--- | Creates an AnalysisError from a given SourcePos (provided by Parsec).
-fromSourcePos :: SourcePos -> String -> Either AnalysisError a
-fromSourcePos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
-
--- | Combine a list of Eithers into an Either of lists.
-combineErrors :: Foldable t => b -> t (Either [a] b) -> Either [a] b
-combineErrors initial = foldr combine (Right initial)
-    where
-        combine result (Right _) = result
-        combine (Left errs) (Left list) = Left $ errs ++ list
-        combine (Right _)   (Left list) = Left list
-
--- | Map the error part of the Either. Works like a left-map.
-mapErr :: (a -> c) -> Either a b -> Either c b
-mapErr f (Left err) = Left (f err)
-mapErr _ (Right val) = Right val
-
--- | The different data types.
-data Type = TBool | TString | TInt
-    deriving Eq
-
-instance Show Type where
-    show TBool   = "boolean"
-    show TString = "string"
-    show TInt    = "integer"
 
 -- | An expression paired with its type.
 data TypedExpression = TypedExpression Type Expression
@@ -43,7 +16,7 @@ typeOf (TypedExpression ty _) = ty
 -- | Type-checks a located expression, and returns the expression annotated with its type
 --   if successful. This is a helpful shortcut for code generation.
 analyseExpression :: LocatedExpr -> Either [AnalysisError] TypedExpression
-analyseExpression expr = mapErr pure $ (typecheckExpression . fromLocated) expr
+analyseExpression expr = liftSingleErr $ (typecheckExpression . fromLocated) expr
 
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
@@ -95,7 +68,7 @@ typecheckExpression expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs
                         , show rtype
                         , "`" ]
             else
-                fromSourcePos lPos $ "cannot compare `string`"
+                fromSourcePos rPos $ "cannot compare `string`"
         else
             fromSourcePos lPos $ "cannot compare `string`"
     where

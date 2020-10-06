@@ -22,10 +22,10 @@ import Rainbow
 import Text.Parsec ( runParser )
 import Text.Pretty.Simple (pPrint)
 
+import Common
 
 import RooParser
 import RooPrettyPrinter ( prettyPrint )
-import RooAnalyse
 import RooCompile ( compileProgram )
 
 -- | Represents the various command-line arguments

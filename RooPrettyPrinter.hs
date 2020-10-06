@@ -44,14 +44,14 @@ prettyRecord (Record fields ident) = concat
 
 -- | Replaces an Array Declaration node with its pretty-printed representation
 prettyArrayDecl :: ArrayType -> String
-prettyArrayDecl (ArrayType size typeName ident) = concat
+prettyArrayDecl (ArrayType _ size typeName ident) = concat
     [ "array[" ++ show size ++ "] "
     , prettyType typeName
     , " " ++ ident ++ endline ]
 
 -- | Replaces a Procedure node with its pretty-printed representation
 prettyProcedure :: Procedure -> String
-prettyProcedure (Procedure header varDecls body) = concat
+prettyProcedure (Procedure _ header varDecls body) = concat
     [ prettyHeader header
     , concat (map prettyVarDecls varDecls)
     , "{\n"
@@ -68,9 +68,12 @@ prettyPrimitiveType RawBoolType = "boolean"
 prettyPrimitiveType RawIntType = "integer"
 
 -- | Replaces a TypeName node with a String representation of primitive types
-prettyType :: TypeName -> String
-prettyType (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
-prettyType (AliasTypeName ident) = ident
+prettyType :: LocatedTypeName -> String
+prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
+
+prettyTypeInner :: TypeName -> String
+prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
+prettyTypeInner (AliasTypeName ident) = ident
 
 -- | Replaces a FieldDecl node with a string 
 prettyFieldDecl :: FieldDecl -> String 

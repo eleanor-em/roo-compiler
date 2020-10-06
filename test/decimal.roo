@@ -1,0 +1,173 @@
+array[20] integer bigint_t;
+array[10] boolean other;
+
+procedure mod (integer val x, integer val n, integer result)
+{
+    result <- n - x / n * n;
+    if result = n then
+        result <- 0;
+    fi
+    while result < 0 do
+        result <- result + n;
+    od
+}
+
+procedure pow (integer val base, integer val exponent, integer result)
+    integer i;
+{
+    result <- base;
+    while i < exponent do
+        result <- result * base;
+        i <- i + 1;
+    od
+}
+
+procedure ndigit (integer val a, integer val n, integer result)
+    integer x;
+{
+    call pow(10, n, x);
+    result <- a / x;
+    call mod(result, 10, x);
+    result <- x;
+    if result < 0 then
+        result <- result * -1;
+    fi
+}
+
+procedure length (bigint_t a, integer result)
+    integer i;
+    boolean done;
+{
+    result <- 0;
+    i <- 19;
+    done <- false;
+
+    while not done and i >= 0 do
+        if a[i] = 0 then
+            result <- result + 1;
+        else
+            done <- true;
+        fi
+        i <- i - 1;
+    od
+
+    if i = 0 then
+        result <- 20;
+    else
+        result <- 20 - result;
+    fi
+}
+
+procedure add (bigint_t a, bigint_t b, bigint_t c)
+    integer carry;
+    integer i;
+    integer result;
+{
+    while i < 20 do
+        result <- a[i] + b[i] + carry;
+        call mod(result, 10, c[i]);
+        carry <- result / 10;
+        i <- i + 1;
+    od
+}
+
+procedure compl(bigint_t x, bigint_t c)
+    integer i;
+    bigint_t one;
+{
+    one[0] <- 1;
+
+    while i < 20 do
+        c[i] <- 9 - x[i];
+        i <- i + 1;
+    od
+
+    call add(one, c, c);
+}
+
+procedure sub(bigint_t a, bigint_t b, bigint_t c)
+{
+    call compl(b, c);
+    call add(a, c, c);
+}
+
+procedure shl(bigint_t x, integer val n, bigint_t result)
+    integer i;
+{
+    if n = 0 then
+        result <- x;
+    else
+        i <- 19;
+        while i >= 0 do
+            if i >= n then
+                result[i] <- x[i - n];
+            else
+                result[i] <- 0;
+            fi
+
+            i <- i - 1;
+        od
+
+        result[0] <- 0;
+    fi
+}
+
+procedure shr(bigint_t x, integer val n, bigint_t result)
+    integer i;
+{
+    if n = 0 then
+        result <- x;
+    else
+        while i < 20 do
+            if i <= 20 - n - 1 then
+                result[i] <- x[i + n];
+            else
+                result[i] <- 0;
+            fi
+
+            i <- i + 1;
+        od
+
+        result[19] <- 0;
+    fi
+}
+
+procedure is_neg(bigint_t x, boolean result)
+{
+    result <- x[19] >= 5;
+}
+
+procedure from_int(integer val x, bigint_t result)
+    integer i;
+{
+    while i < 20 do
+        call ndigit(x, i, result[i]);
+        i <- i + 1;
+    od
+}
+
+procedure to_int(bigint_t x, integer result)
+    integer i;
+    integer temp;
+    bigint_t x';
+    boolean flag;
+{
+    result <- 0;
+
+    call is_neg(x, flag);
+    if flag then
+        call comp(x, x');
+    else
+        x' <- x;
+    fi
+
+    while i < 20 do
+        call pow(10, i, temp);
+        result <- result + temp * x[i];
+        i <- i + 1;
+    od
+
+    if flag then
+        result <- result * -1;
+    fi
+}
