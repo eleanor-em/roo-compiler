@@ -63,7 +63,7 @@ typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
 typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
-        TBool -> pure    $ TypedExpr TInt expr
+        TBool -> pure    $ TypedExpr TBool expr
         ty    -> liftOne $ errorPos pos $ "expecting `boolean`, found `" <> show ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.

@@ -1,5 +1,5 @@
 procedure main() {
     write "Hello folks\n";
-    write 1 + 2;
-    writeln "";
+    writeln 1 + 2 / 3;
+    writeln true and not false or false;
 }

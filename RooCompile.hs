@@ -98,17 +98,17 @@ compileExpr (EBinOp op lexp rexp) = do
 
     where
         ozOp = case op of
-            BinOr     -> ozOr
-            BinAnd    -> ozAnd
-            BinEq     -> ozEq
-            BinNeq    -> ozNeq
-            BinLt     -> ozLt
-            BinLte    -> ozLte
-            BinGt     -> ozGt
-            BinGte    -> ozGte
-            BinPlus   -> ozPlus
-            BinMinus  -> ozMinus
-            BinTimes  -> ozTimes
+            BinOr    -> ozOr
+            BinAnd   -> ozAnd
+            BinEq    -> ozEq
+            BinNeq   -> ozNeq
+            BinLt    -> ozLt
+            BinLte   -> ozLte
+            BinGt    -> ozGt
+            BinGte   -> ozGte
+            BinPlus  -> ozPlus
+            BinMinus -> ozMinus
+            BinTimes -> ozTimes
             BinDivide -> ozDivide
 
 compileLValue :: LValue -> EitherState BlockState Int

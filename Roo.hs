@@ -30,6 +30,7 @@ import Common
 import RooParser (pProgram, ParsedAst)
 import RooPrettyPrinter (prettyPrint)
 import RooCompile (compileProgram )
+import System.IO (stderr)
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -128,12 +129,12 @@ main = do
                     location line col = ":" <> show line <> ":" <> show col 
 
                     label line col err typeline = do
-                        putChunksLn 
+                        hPutChunksLn stderr
                             [ chunk (pack $ progName <> location line col <> ": ")
                                 & fore white
                             , typeline
                             , chunk (pack err) & fore white ]
-                        when (line > 0) $ putChunksLn
+                        when (line > 0) $ hPutChunksLn stderr
                             [ chunk $ pack $ raw !! (line - 1) <> "\n"
                             , chunk $ pack $ take (col - 1) $ cycle " "
                             , "^" & fore brightGreen ]
