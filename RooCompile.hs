@@ -65,7 +65,7 @@ compileStatement symbols locals (SWriteLn expr) = do
 compileStatement symbols locals (SAssign lvalue expr) = do
     TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals expr
     (register, postEval) <- runEither (compileExpr expr) (initialBlockState symbols locals)
-    -- TODO: check that the lvalue type matches
+    -- TODO: check that the lvalue type matches (otherwise can assign bools to ints)
     (_, final) <- runEither (storeLValue lvalue register) postEval
     return $ blockInstrs final
 
