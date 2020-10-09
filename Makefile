@@ -1,4 +1,4 @@
-FLAGS = -Wall -O2 -fno-warn-name-shadowing -fno-warn-unused-do-bind
+FLAGS = -Wall -g -fno-warn-name-shadowing -fno-warn-unused-do-bind
 PACKAGE = -package parsec -package mtl
 
 all: Roo

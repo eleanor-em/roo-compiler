@@ -1,4 +1,3 @@
 procedure main() {
     write "Hello folks\n";
-    v <- --1;
 }

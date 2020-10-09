@@ -27,3 +27,4 @@ cabal.project.local~
 oz/oz
 Roo
 junk/
+*.oz

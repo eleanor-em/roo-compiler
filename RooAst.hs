@@ -164,7 +164,7 @@ data Ident = Ident SourcePos String
 
 instance Show Ident where
     show (Ident pos ident) = concat
-        [ show $ ident
+        [ show ident
         , ":"
         , show $ sourceLine pos
         , ":"

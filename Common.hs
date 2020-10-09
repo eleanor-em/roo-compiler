@@ -3,6 +3,7 @@ module Common where
 import Control.Monad.State
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (maybeToList, mapMaybe)
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
@@ -67,6 +68,22 @@ liftOne = mapErr pure
 ifJust :: Maybe a -> (a -> [b]) -> [b]
 ifJust = flip concatMap
 
+leftToMaybe :: Either a b -> Maybe a
+leftToMaybe (Left e) = Just e
+leftToMaybe _        = Nothing
+
+rightToMaybe :: Either a b -> Maybe b
+rightToMaybe (Right v) = Just v
+rightToMaybe _        = Nothing
+
+concatEither :: [Either [a] [b]] -> Either [a] [b]
+concatEither list
+        | null lefts = Right rights
+        | otherwise  = Left lefts
+    where
+        lefts = concat $ mapMaybe leftToMaybe list
+        rights = concat . maybeToList $ mconcat $ map rightToMaybe list
+
 -- | Wrap the notion of a state that also keeps track of errors, with helper functions.
 type EitherState s v = State ([AnalysisError], s) v
 
@@ -93,5 +110,12 @@ putEither state = do
     put (errs, state)
 
 -- | `execState` for EitherState.
-execEither :: EitherState s () -> s -> ([AnalysisError], s)
+execEither :: EitherState s a -> s -> ([AnalysisError], s)
 execEither state initial = execState state ([], initial)
+
+runEither :: EitherState s a -> s -> Either [AnalysisError] (a, s)
+runEither state initial
+    | null errs = Right (val, final)
+    | otherwise = Left errs
+    where
+        (val, (errs, final)) = runState state ([], initial)

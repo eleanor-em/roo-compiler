@@ -88,7 +88,7 @@ handleAst Help _ = undefined
 
 getAst :: [String] -> IO (ParsedAst, [String])
 getAst progNames = 
-    if not (null progNames) then do
+    if null progNames then do
         putStrLn "error: must provide file"
         putStr usage
         exitFailure
@@ -115,7 +115,7 @@ main :: IO ()
 main = do
     args <- getArgs
     (flags, progNames) <- compilerFlags args 
-    if not (null flags) then do
+    if null flags then do
         (ast, raw) <- getAst progNames
         -- At this point, progNames is known to be non-empty
         let progName = head progNames
@@ -145,7 +145,7 @@ main = do
                         = label line col err $ "note: " & fore brightCyan
 
             Right output -> do
-                putStrLn $ concat output
+                putStr $ concat output
                 exitSuccess
 
     else case head flags of
