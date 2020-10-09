@@ -43,13 +43,15 @@ ozBoolConst :: Int -> Bool -> [String]
 ozBoolConst register val = ["int_const " <> toOz register <> ", " <> convertBool val]
 
 ozWriteInt :: Int -> [String]
+ozWriteInt 0 = ["call_builtin print_int"]
 ozWriteInt register =
-    [ "load r0, \"" <> toOz register <> "\""
+    [ "move r0, \"" <> toOz register <> "\""
     , "call_builtin print_int" ]
 
 ozWriteBool :: Int -> [String]
+ozWriteBool 0 = ["call_builtin print_bool"]
 ozWriteBool register =
-    [ "load r0, \"" <> toOz register <> "\""
+    [ "move r0, \"" <> toOz register <> "\""
     , "call_builtin print_bool" ]
 
 ozWriteString :: String -> [String]

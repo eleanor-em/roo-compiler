@@ -54,6 +54,10 @@ compileStatement symbols locals (SWrite expr) = do
         
         return $ blockInstrs final <> op ty result
 
+compileStatement symbols locals (SWriteLn expr) = do
+    instrs <- compileStatement symbols locals (SWrite expr)
+    return $ instrs <> ozWriteString "\\n"
+
 compileStatement _ _ _ = error "compileStatement: not yet implemented"
 
 useRegister :: EitherState BlockState Int
