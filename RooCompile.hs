@@ -24,9 +24,13 @@ compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements)
     case Map.lookup procName (rootProcs symbols) of
         Just (_, locals) -> do
             instrs <- concatEither $ map (compileStatement symbols locals) statements
-            let prologue = "proc_" <> procName <> ":"
-            let epilogue = "return"
-            Right $ prologue : map ("    " <>) (instrs <> [epilogue])
+            let numLocals = Map.size (localSymbols locals)
+
+            let prologue = if numLocals > 0 then ozPushStackFrame numLocals else []
+            let epilogue = if numLocals > 0 then ozPopStackFrame numLocals else []
+
+            Right $ ["proc_" <> procName <> ":"]
+                 <> map ("    " <>) (prologue <> instrs <> epilogue <> ["return"])
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
@@ -58,9 +62,16 @@ compileStatement symbols locals (SWriteLn expr) = do
     instrs <- compileStatement symbols locals (SWrite expr)
     return $ instrs <> ozWriteString "\\n"
 
+compileStatement symbols locals (SAssign lvalue expr) = do
+    TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals expr
+    (register, postEval) <- runEither (compileExpr expr) (initialBlockState symbols locals)
+    -- TODO: check that the lvalue type matches
+    (_, final) <- runEither (storeLValue lvalue register) postEval
+    return $ blockInstrs final
+
 compileStatement _ _ _ = error "compileStatement: not yet implemented"
 
-useRegister :: EitherState BlockState Int
+useRegister :: EitherState BlockState Register
 useRegister = do
     current <- getEither
     let register = blockNextReg current
@@ -73,10 +84,10 @@ addInstrs instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
-compileExpr :: Expression -> EitherState BlockState Int
-compileExpr (ELvalue lvalue) = compileLValue lvalue
+compileExpr :: Expression -> EitherState BlockState Register
+compileExpr (ELvalue lvalue) = loadLValue lvalue
 
-compileExpr (EConst lit) = compileConst lit
+compileExpr (EConst lit) = loadConst lit
 
 compileExpr (EUnOp op expr) = do
     result <- useRegister
@@ -111,32 +122,47 @@ compileExpr (EBinOp op lexp rexp) = do
             BinTimes -> ozTimes
             BinDivide -> ozDivide
 
-compileLValue :: LValue -> EitherState BlockState Int
-compileLValue (LId (Ident _ name)) = do
+loadLValue :: LValue -> EitherState BlockState Register
+loadLValue (LId (Ident _ name)) = do
     current <- getEither
     case Map.lookup name (localSymbols $ blockLocalSyms current) of
-        Just sym -> compileSymbol sym
+        Just sym -> loadSymbol sym
         Nothing  -> error "internal error: type check failed"
 
-compileLValue _ = error "compileLValue: not yet implemented"
+loadLValue _ = error "loadLValue: not yet implemented"
 
-compileSymbol :: ProcSymbol -> EitherState BlockState Int
-compileSymbol (ProcSymbol (ValSymbol _) location _) = do
+loadSymbol :: ProcSymbol -> EitherState BlockState Register
+loadSymbol (ProcSymbol (ValSymbol _) location _) = do
     register <- useRegister
     addInstrs $ ozLoad register location
     return register
 
-compileSymbol _ = error "compileSymbol RefSymbol: not yet implemented"
+loadSymbol _ = error "loadSymbol RefSymbol: not yet implemented"
 
-compileConst :: Literal -> EitherState BlockState Int
-compileConst (LitBool val) = do
+loadConst :: Literal -> EitherState BlockState Register
+loadConst (LitBool val) = do
     register <- useRegister
     addInstrs $ ozBoolConst register val
     return register
 
-compileConst (LitInt val) = do
+loadConst (LitInt val) = do
     register <- useRegister
     addInstrs $ ozIntConst register val
     return register
 
-compileConst _ = error "internal error: tried to load string constant"
+loadConst _ = error "internal error: tried to load string constant"
+
+storeLValue :: LValue -> Register -> EitherState BlockState ()
+storeLValue (LId (Ident _ name)) register = do
+    current <- getEither
+    case Map.lookup name (localSymbols $ blockLocalSyms current) of
+        Just sym -> storeSymbol register sym
+        Nothing  -> error "internal error: type check failed"
+
+storeLValue _ _ = error "storeLValue: not yet implemented"
+
+storeSymbol :: Register -> ProcSymbol -> EitherState BlockState ()
+storeSymbol register (ProcSymbol (ValSymbol _) location _)
+    = addInstrs $ ozStore location register
+
+storeSymbol _ _ = error "storeSymbol RefSymbol: not yet implemented"

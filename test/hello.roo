@@ -1,5 +1,9 @@
-procedure main() {
+procedure main()
+    integer a;
+{
     write "Hello folks\n";
     writeln 1 + 2 / 3;
     writeln true and not false or false;
+    a <- 1 + 2 + 3;
+    writeln a;
 }

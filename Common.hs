@@ -7,6 +7,8 @@ import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
+type Register = Int
+
 -- | Concatenates a list of pairs of lists.
 concatPair ::[([a], [b])] -> ([a], [b])
 concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)) ([], [])

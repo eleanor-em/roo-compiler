@@ -4,17 +4,24 @@ convertBool :: Bool -> String
 convertBool False = "0"
 convertBool True = "1"
 
+toOz :: Int -> String
+toOz register = 'r' : show register
+
+ozPushStackFrame :: Int -> [String]
+ozPushStackFrame n = ["push_stack_frame " <> show n]
+ozPopStackFrame :: Int -> [String]
+ozPopStackFrame n = ["pop_stack_frame " <> show n]
+
+ozLoad, ozStore :: Int -> Int -> [String]
+ozLoad register location = ["load " <> toOz register <> ", " <> show location]
+
+ozStore location register = ["store " <> show location <> ", " <> toOz register]
+
 ozBinOp :: String -> Int -> Int -> [String]
 ozBinOp op dest src = pure $ op <> " " <> toOz dest <> ", " <> toOz src
 
 ozTernOp :: String -> Int -> Int -> Int -> [String]
 ozTernOp op dest lhs rhs = pure $ op <> " " <> toOz dest <> ", " <> toOz lhs <> ", " <> toOz rhs
-
-toOz :: Int -> String
-toOz register = 'r' : show register
-
-ozLoad :: Int -> Int -> [String]
-ozLoad register location = ["load " <> toOz register <> ", " <> show location]
 
 ozNot, ozNeg :: Int -> Int -> [String]
 ozNot = ozBinOp "not"
