@@ -50,7 +50,7 @@ ozMinus  = ozTernOp "sub_int"
 ozTimes  = ozTernOp "mul_int"
 ozDivide = ozTernOp "div_int"
 
-ozIntConst :: Register -> Integer -> [Text]
+ozIntConst :: Register -> Int -> [Text]
 ozIntConst register val = ["int_const " <> toOz register <> ", " <> tshow val]
 
 ozBoolConst :: Register -> Bool -> [Text]

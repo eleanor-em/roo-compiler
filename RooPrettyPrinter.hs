@@ -277,9 +277,9 @@ unaryHigherPrecedence UnNegate _ = True
 prettySquares :: Text -> Text
 prettySquares str = "[" <> str <> "]"
 
--- | Replaces an `LValue` node with a string representation of the given lvalue, proceeding by cases
+-- | Replaces an `Lvalue` node with a string representation of the given lvalue, proceeding by cases
 -- in the natural manner
-prettyLvalue :: LValue -> Text
+prettyLvalue :: Lvalue -> Text
 prettyLvalue (LId ident) = (fromIdent ident)
 
 prettyLvalue (LMember memberRecord memberField) 

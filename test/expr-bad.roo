@@ -5,6 +5,7 @@ procedure foo(integer val x, integer x)
     integer x;
 {
     write "fail";
+    x <- true;
 }
 procedure foo()
 {

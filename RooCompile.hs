@@ -43,8 +43,8 @@ compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements)
     case Map.lookup procName (rootProcs symbols) of
         Just (_, locals) -> do
             instrs <- concatEither $ map (compileStatement symbols locals) statements
-            let numLocals = Map.size (localSymbols locals)
 
+            let numLocals = Map.size (localSymbols locals)
             let prologue = if numLocals > 0 then ozPushStackFrame numLocals else []
             let epilogue = if numLocals > 0 then ozPopStackFrame  numLocals else []
 
@@ -88,11 +88,20 @@ compileStatement symbols locals st@(SWriteLn expr) = do
 
 compileStatement symbols locals st@(SAssign lvalue expr) = do
     let comment = addComment $ prettyStatement 0 st
-    TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals expr
-    (register, postEval) <- runEither (compileExpr expr) (initialBlockState symbols locals)
-    -- TODO: check that the lvalue type matches (otherwise can assign bools to ints)
-    (_, final) <- runEither (storeLValue lvalue register) postEval
-    return $ comment <> blockInstrs final
+
+    TypedExpr ty' expr' <- analyseExpression (rootAliases symbols) locals expr
+    
+    sym <- analyseLvalue locals lvalue
+    let ty = rawSymType sym
+    
+    if ty /= ty' then
+        let err  = ("expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`")
+            note = ("`" <> symName sym <> "` declared here:") in
+        Left $ errorWithNote (locate expr) err (symPos sym) note
+    else do
+        (register, postEval) <- runEither (compileExpr expr') (initialBlockState symbols locals)
+        (_, final) <- runEither (storeSymbol register sym) postEval
+        return $ comment <> blockInstrs final
 
 compileStatement _ _ _ = error "compileStatement: not yet implemented"
 
@@ -110,7 +119,7 @@ addInstrs instrs = do
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
 compileExpr :: Expression -> EitherState BlockState Register
-compileExpr (ELvalue lvalue) = loadLValue lvalue
+compileExpr (ELvalue lvalue) = loadLvalue lvalue
 
 compileExpr (EConst lit) = loadConst lit
 
@@ -147,17 +156,17 @@ compileExpr (EBinOp op lexp rexp) = do
             BinTimes -> ozTimes
             BinDivide -> ozDivide
 
-loadLValue :: LValue -> EitherState BlockState Register
-loadLValue (LId (Ident _ name)) = do
+loadLvalue :: Lvalue -> EitherState BlockState Register
+loadLvalue (LId (Ident _ name)) = do
     current <- getEither
     case Map.lookup name (localSymbols $ blockLocalSyms current) of
         Just sym -> loadSymbol sym
         Nothing  -> error "internal error: type check failed"
 
-loadLValue _ = error "loadLValue: not yet implemented"
+loadLvalue _ = error "loadLvalue: not yet implemented"
 
 loadSymbol :: ProcSymbol -> EitherState BlockState Register
-loadSymbol (ProcSymbol (ValSymbol _) location _) = do
+loadSymbol (ProcSymbol (ValSymbol _) location _ _) = do
     register <- useRegister
     addInstrs $ ozLoad register location
     return register
@@ -177,17 +186,14 @@ loadConst (LitInt val) = do
 
 loadConst _ = error "internal error: tried to load Text constant"
 
-storeLValue :: LValue -> Register -> EitherState BlockState ()
-storeLValue (LId (Ident _ name)) register = do
+storeLvalue :: Lvalue -> Register -> EitherState BlockState ()
+storeLvalue lvalue register = do
     current <- getEither
-    case Map.lookup name (localSymbols $ blockLocalSyms current) of
-        Just sym -> storeSymbol register sym
-        Nothing  -> error "internal error: type check failed"
-
-storeLValue _ _ = error "storeLValue: not yet implemented"
+    addErrorsOr (analyseLvalue (blockLocalSyms current) lvalue) $ \sym ->
+        storeSymbol register sym
 
 storeSymbol :: Register -> ProcSymbol -> EitherState BlockState ()
-storeSymbol register (ProcSymbol (ValSymbol _) location _)
+storeSymbol register (ProcSymbol (ValSymbol _) location _ _)
     = addInstrs $ ozStore location register
 
 storeSymbol _ _ = error "storeSymbol RefSymbol: not yet implemented"

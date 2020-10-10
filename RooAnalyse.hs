@@ -2,6 +2,7 @@
 
 module RooAnalyse where
 
+import Debug.Trace (trace)
 import qualified Data.Map.Strict as Map
 
 import Common
@@ -43,7 +44,7 @@ typecheckExpression :: AliasTable -> LocalTable -> Expression -> Either [Analysi
 typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> pure    $ TypedExpr (procSymType $ symType sym) expr
-        Nothing  -> liftOne $ errorPos pos $ "unknown identifier `" <> ident <> "`"
+        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown identifier `" <> ident <> "`"
 
 typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) indexExpr))
     = case Map.lookup ident (localSymbols locals) of
@@ -53,7 +54,7 @@ typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) index
                     typecheckArrayIndex aliases locals indexExpr
                     pure $ TypedExpr ty expr
                 ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> liftOne $ errorPos pos $ "unknown identifier `" <> ident <> "`"
+        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown identifier `" <> ident <> "`"
 
 -- Literals are always well-typed.
 typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
@@ -130,3 +131,20 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                  , "`" ]
 
 typecheckExpression _ _ _ = error "typecheckExpression: not yet implemented"
+
+analyseLvalue :: LocalTable -> Lvalue -> Either [AnalysisError] ProcSymbol
+analyseLvalue symbols (LId (Ident pos name)) = do
+    sym <- unwrapOr (trace (show $ localSymbols symbols) $ Map.lookup name $ localSymbols symbols)
+                    (liftOne $ errorPos pos $ "in statement: unknown identifier `" <> name <> "`")
+    
+    let ty = rawSymType sym
+
+    case ty of
+        TArray _ _ -> typeError ty
+        TRecord _  -> typeError ty
+        _          -> Right sym
+    where
+        typeError ty = liftOne $ errorPos pos $
+            "expected identifier of primitive type, found `" <> tshow ty <> "`" 
+
+analyseLvalue _ _ = error "analyseLvalue: not yet implemented"

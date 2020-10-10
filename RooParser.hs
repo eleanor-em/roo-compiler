@@ -13,7 +13,6 @@ module RooParser where
 
 import Control.Applicative (liftA2)
 
-import Data.Text (Text)
 import qualified Data.Text as T
 
 import RooAst
@@ -70,8 +69,8 @@ lexeme     = Q.lexeme scanner
 parens     = Q.parens scanner
 braces     = Q.braces scanner
 brackets   = Q.brackets scanner
-decimal :: Parser Integer
-decimal    = lexeme $ Q.decimal scanner
+decimal :: Parser Int
+decimal    = lexeme $ fromIntegral <$> Q.decimal scanner
 
 identifier, semi, comma, dot :: Parser String
 identifier = lexeme $ Q.identifier scanner
@@ -170,8 +169,8 @@ pPrimitiveType =
     <|>
         reserved "integer" $> RawIntType
 
--- | Parses a positive integer and returns an Integer node if accepted 
-pPositiveInt :: Parser Integer
+-- | Parses a positive integer and returns an Int node if accepted 
+pPositiveInt :: Parser Int
 pPositiveInt = do
         leading <- oneOf "123456789"
         trailing <- lexeme $ many digit
@@ -241,8 +240,8 @@ pAssignStatement = do
     reservedOp "<-"
     SAssign lvalue <$> pExpression
 
--- | Parses lvalue statements and returns an LValue node if accepted 
-pLvalue :: Parser LValue
+-- | Parses lvalue statements and returns an Lvalue node if accepted 
+pLvalue :: Parser Lvalue
 pLvalue =
         try (do
             ident1 <- pIdent

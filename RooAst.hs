@@ -36,7 +36,7 @@ data Record = Record
 --     1. an integer 
 --     2. a type name 
 --     3. an identifier 
-data ArrayType = ArrayType SourcePos Integer LocatedTypeName Ident
+data ArrayType = ArrayType SourcePos Int LocatedTypeName Ident
     deriving (Show, Eq)
 
 -- | A Procedure node consists of:
@@ -61,7 +61,7 @@ data ProcHeader = ProcHeader Ident [Parameter]
 data FieldDecl = FieldDecl PrimitiveType Ident
     deriving (Show, Eq)
 
--- | Primitive type can either be a Raw Boolean or a Raw Integer 
+-- | Primitive type can either be a Raw Boolean or a Raw Int 
 data PrimitiveType = RawBoolType | RawIntType
     deriving (Show, Eq)
 
@@ -97,8 +97,8 @@ getTypePos (LocatedTypeName pos _) = pos
 --     * an ifelse statement
 --     * a while statement 
 data Statement 
-    = SAssign LValue LocatedExpr
-    | SRead LValue
+    = SAssign Lvalue LocatedExpr
+    | SRead Lvalue
     | SWrite LocatedExpr
     | SWriteLn LocatedExpr
     | SCall Ident [LocatedExpr]
@@ -113,7 +113,7 @@ data Statement
 --     * expression <binary operator> expression
 --     * <unary operator> expression 
 data Expression
-    = ELvalue LValue
+    = ELvalue Lvalue
     | EConst Literal
     | EBinOp BinOp LocatedExpr LocatedExpr
     | EUnOp UnOp LocatedExpr
@@ -129,7 +129,7 @@ data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression 
 --     * a string 
 data Literal 
     = LitBool Bool
-    | LitInt Integer
+    | LitInt Int
     | LitString Text
     deriving (Show, Eq)
 
@@ -148,13 +148,13 @@ data BinOp
 data UnOp = UnNot | UnNegate
     deriving (Show, Eq)
 
--- | An LValue node can be one of the following forms:
+-- | An Lvalue node can be one of the following forms:
 -- 
 --     * <identifier> 
 --     * <identifier>.<identifier>
 --     * <identifier>[<expression>]
 --     * <identifier>[<expression>].<identifier
-data LValue
+data Lvalue
     = LId Ident
     | LMember Ident Ident
     | LArray Ident LocatedExpr

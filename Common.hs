@@ -24,7 +24,7 @@ tshow :: Show a => a -> Text
 tshow = T.pack . show
 
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Integer Type | TRecord (Map Text Type)
+data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Type)
     deriving Eq
 
 instance Show Type where
@@ -34,9 +34,16 @@ instance Show Type where
     show (TArray size ty) = show ty <> "[" <> show size <> "]"
     show (TRecord ty) = show ty
 
+sizeof :: Type -> Int
+sizeof TBool = 1
+sizeof TString = 1
+sizeof TInt = 1
+sizeof (TArray size ty) = size * sizeof ty
+sizeof (TRecord map) = foldr ((+) . sizeof) 0 map
+
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Integer Type | AliasRecord (Map Text Type)
+data AliasType = AliasArray Int Type | AliasRecord (Map Text Type)
     deriving Eq
 
 instance Show AliasType where
@@ -123,3 +130,7 @@ runEither state initial
     | otherwise = Left errs
     where
         (val, (errs, final)) = runState state ([], initial)
+
+unwrapOr :: Maybe v -> Either e v -> Either e v
+unwrapOr (Just x) _  = Right x
+unwrapOr Nothing err = err

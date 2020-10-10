@@ -6,6 +6,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Data.Text (Text)
+import qualified Data.Text as T
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
@@ -25,12 +26,21 @@ instance Show ProcSymType where
     show (RefSymbol ty) = show ty <> " ref"
 
 -- | Represents a procedure symbol with a type, location on the stack, and source position.
-data ProcSymbol = ProcSymbol { symType :: ProcSymType, symLocation :: Int, symPos :: SourcePos }
+data ProcSymbol = ProcSymbol
+    { symType :: ProcSymType
+    , symLocation :: Int
+    , symPos :: SourcePos
+    , symName :: Text }
     deriving Eq
+
+rawSymType :: ProcSymbol -> Type
+rawSymType = procSymType . symType
 
 instance Show ProcSymbol where
     show sym = concat
         [ show $ symType sym
+        , " "
+        , T.unpack $ symName sym
         , ":"
         , show . sourceLine $ symPos sym
         , ":"
@@ -139,12 +149,11 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) =
     let procs = psTable procSymbols'
 
     -- Check if there is another procedure with this name
-    addErrors $ ifJust (Map.lookup name table) $ \(otherPos, _) ->
+    case Map.lookup name table of
+        Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
-                              otherPos "first declared here:"
-    addErrors errs
-    
-    putEither $ Map.insert name (pos, LocalTable params procs) table
+                              otherPos  "first declared here:"
+        _ -> putEither $ Map.insert name (pos, LocalTable params procs) table
 
 -- | Check whether there is an existing type with this name. If not, returns the checked type.
 procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState
@@ -172,7 +181,7 @@ symbolsParam symbols param = do
         let ty' = cons ty
 
         putEither (procSymbols
-            { psTable = Map.insert name (ProcSymbol ty' loc pos) table
+            { psTable = Map.insert name (ProcSymbol ty' loc pos name) table
             , psParams = params <> [ty']
             , location = loc + 1 })
     where
@@ -201,5 +210,5 @@ symbolsDecl symbols (VarDecl ty idents) = do
                 let loc = location procSymbols
                 let table = psTable procSymbols
                 putEither (procSymbols
-                    { psTable = Map.insert name (ProcSymbol (ValSymbol ty) loc pos) table
-                    , location = loc + 1 })
+                    { psTable = Map.insert name (ProcSymbol (ValSymbol ty) loc pos name) table
+                    , location = loc + sizeof ty })
