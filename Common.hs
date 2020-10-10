@@ -1,20 +1,30 @@
 module Common where
 
 import Control.Monad.State
+
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import Data.Either (lefts, rights)
+
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
-type Register = Int
+newtype Register = Register Int
+instance Show Register where
+    show (Register r) = show r
 
 -- | Concatenates a list of pairs of lists.
 concatPair ::[([a], [b])] -> ([a], [b])
 concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)) ([], [])
 
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Integer Type | TRecord (Map String Type)
+data Type = TBool | TString | TInt | TArray Integer Type | TRecord (Map Text Type)
     deriving Eq
 
 instance Show Type where
@@ -26,7 +36,7 @@ instance Show Type where
 
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Integer Type | AliasRecord (Map String Type)
+data AliasType = AliasArray Integer Type | AliasRecord (Map Text Type)
     deriving Eq
 
 instance Show AliasType where
@@ -42,17 +52,17 @@ liftAlias (AliasArray size ty) = TArray size ty
 liftAlias (AliasRecord ty) = TRecord ty
 
 -- | Represents an error during static analysis. Fields are: line, col, message
-data AnalysisError = AnalysisError Int Int String | AnalysisNote Int Int String
+data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
     deriving Show
 
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
 --   and wraps it in an Either.
-errorPos :: SourcePos -> String -> Either AnalysisError a
+errorPos :: SourcePos -> Text -> Either AnalysisError a
 errorPos pos err = Left $ AnalysisError (sourceLine pos)  (sourceColumn pos) err
 
 -- | Creates an AnalysisError from a given SourcePos with a note giving more detail
 --   at another SourcePos.
-errorWithNote :: SourcePos -> String -> SourcePos -> String -> [AnalysisError]
+errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
 errorWithNote errPos err notePos note =
     [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
     , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]

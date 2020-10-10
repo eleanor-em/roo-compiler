@@ -1,7 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module SymTable where
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+
+import Data.Text (Text)
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
@@ -39,7 +43,7 @@ instance Show ProcSymbol where
 --   parameters in order, and a table of procedure symbols.
 data LocalTable = LocalTable
     { localParams :: [ProcSymType]
-    , localSymbols :: Map String ProcSymbol }
+    , localSymbols :: Map Text ProcSymbol }
 
 instance Show LocalTable where
     show (LocalTable params syms) = concat
@@ -50,8 +54,8 @@ instance Show LocalTable where
         , "}" ]
 
 -- | Shorthand for the two main types of symbol tables.
-type AliasTable = Map String (SourcePos, AliasType)
-type ProcTable = Map String (SourcePos, LocalTable)
+type AliasTable = Map Text (SourcePos, AliasType)
+type ProcTable = Map Text (SourcePos, LocalTable)
 
 -- | The root symbol table contains a table of aliases and procedures.
 data RootTable = RootTable
@@ -69,7 +73,7 @@ instance Show RootTable where
 -- | Procedures additionally need to track the stack location being used and the parameters' types.
 data ProcSymbolState = ProcSymbolState
     { location :: Int
-    , psTable  :: Map String ProcSymbol
+    , psTable  :: Map Text ProcSymbol
     , psParams :: [ProcSymType] }
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).

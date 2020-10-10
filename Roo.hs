@@ -20,7 +20,8 @@ import System.Console.GetOpt
 import System.Directory (doesFileExist)
 
 import Data.Function ((&))
-import Data.Text (pack)
+import Data.Text (pack, unpack)
+import qualified Data.Text.IO as T
 
 import Rainbow
 import Text.Parsec (runParser)
@@ -64,12 +65,12 @@ handleAst GenAst ast = do
     exitSuccess
 
 handleAst PrettyPrint ast = do
-    putStr $ prettyPrint ast
+    T.putStr $ prettyPrint ast
     exitSuccess
 
 handleAst TestPrettyPrinter ast = do
     let prettyPrinted = prettyPrint ast
-    let reparsed = runParser pProgram 0 "" prettyPrinted
+    let reparsed = runParser pProgram 0 "" (unpack prettyPrinted)
     case reparsed of 
         Right ast' -> do
             let rePrettyPrinted = prettyPrint ast'
@@ -133,7 +134,7 @@ main = do
                             [ chunk (pack $ progName <> location line col <> ": ")
                                 & fore white
                             , typeline
-                            , chunk (pack err) & fore white ]
+                            , chunk err & fore white ]
                         when (line > 0) $ hPutChunksLn stderr
                             [ chunk $ pack $ raw !! (line - 1) <> "\n"
                             , chunk $ pack $ take (col - 1) $ cycle " "
@@ -146,7 +147,7 @@ main = do
                         = label line col err $ "note: " & fore brightCyan
 
             Right output -> do
-                putStr $ concat output
+                T.putStr $ mconcat output
                 exitSuccess
 
     else case head flags of

@@ -13,6 +13,9 @@ module RooParser where
 
 import Control.Applicative (liftA2)
 
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import RooAst
 
 import Text.Parsec
@@ -143,7 +146,7 @@ pProcedure = do
 
 -- | Parses an identifier and returns an Ident node if accepted
 pIdent :: Parser Ident
-pIdent = liftA2 Ident sourcePos (lexeme identifier)
+pIdent = liftA2 Ident sourcePos (T.pack <$> lexeme identifier)
     <?> "identifier"
 
 -- | Parses a field declaration and returns a FieldDecl node if accepted
@@ -379,7 +382,7 @@ pBoolLiteral =
 -- doesn't alter them -- for later injection into Oz.
 pStringLiteral :: Parser LocatedExpr
 pStringLiteral
-    = liftSourcePos $ (EConst . LitString) <$> between quote (lexeme quote) pStringLitChars
+    = liftSourcePos $ (EConst . LitString . T.pack) <$> between quote (lexeme quote) pStringLitChars
     where
         pStringLitChars = concat <$> many (choice
             [ char '\\' *> choice [

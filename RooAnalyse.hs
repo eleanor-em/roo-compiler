@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module RooAnalyse where
 
 import qualified Data.Map.Strict as Map
@@ -33,7 +35,7 @@ typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
     case typeof indexTy of
         TInt -> return ()
         ty -> liftOne $ errorPos pos $
-            "expected index expression of type `integer`, found `" <> show ty <> "`"
+            "expected index expression of type `integer`, found `" <> tshow ty <> "`"
 
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
@@ -50,7 +52,7 @@ typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) index
                 TArray _ ty -> do
                     typecheckArrayIndex aliases locals indexExpr
                     pure $ TypedExpr ty expr
-                ty -> liftOne $ errorPos pos $ "expected array type, found `" <> show ty <> "`"
+                ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
         Nothing  -> liftOne $ errorPos pos $ "unknown identifier `" <> ident <> "`"
 
 -- Literals are always well-typed.
@@ -64,14 +66,14 @@ typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = 
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
         TBool -> pure    $ TypedExpr TBool expr
-        ty    -> liftOne $ errorPos pos $ "expecting `boolean`, found `" <> show ty <> "`"
+        ty    -> liftOne $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
         TInt -> pure    $ TypedExpr TInt expr
-        ty   -> liftOne $ errorPos pos $ "expecting `integer`, found `" <> show ty <> "`"
+        ty   -> liftOne $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
 
 -- For binary expressions there are three cases:
 --  1. The operator is a boolean operator (in which case both sides must be boolean)
@@ -90,11 +92,11 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                 if ltype == rtype then
                     pure    $ TypedExpr ltype expr
                 else
-                    liftOne $ errorPos lPos $ concat
+                    liftOne $ errorPos lPos $ mconcat
                         [ "operands do not match: `"
-                        , show ltype
+                        , tshow ltype
                         , "` vs `"
-                        , show rtype
+                        , tshow rtype
                         , "`" ]
             else
                 liftOne $ errorPos rPos "cannot compare `string`"
@@ -109,22 +111,22 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                 if rtype == ty then
                     pure    $ TypedExpr ty expr
                 else
-                    liftOne $ errorPos rPos $ concat
+                    liftOne $ errorPos rPos $ mconcat
                         [ "expecting `"
-                        , show ty
+                        , tshow ty
                         , "` on RHS of `"
                         , prettyBinOp op
                         , "`, found `"
-                        , show rtype
+                        , tshow rtype
                         , "`" ]
             else
-                liftOne $ errorPos lPos $ concat
+                liftOne $ errorPos lPos $ mconcat
                  [ "expecting `"
-                 , show ty
+                 , tshow ty
                  , "` on LHS of `"
                  , prettyBinOp op
                  , "`, found `"
-                 , show ltype
+                 , tshow ltype
                  , "`" ]
 
 typecheckExpression _ _ _ = error "typecheckExpression: not yet implemented"

@@ -9,6 +9,9 @@ up the Roo Language.
 
 module RooAst where
 
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 -- | A Roo Program node consists of: 
@@ -127,7 +130,7 @@ data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression 
 data Literal 
     = LitBool Bool
     | LitInt Integer
-    | LitString String
+    | LitString Text
     deriving (Show, Eq)
 
 -- | A Binary Operator node can be one of the following in order of lowest to highest precedence
@@ -158,8 +161,8 @@ data LValue
     | LArrayMember Ident LocatedExpr Ident
     deriving (Show, Eq)
 
--- | Identifier is a non empty sequence of chars (or String)
-data Ident = Ident SourcePos String
+-- | Identifier is a non empty sequence of chars (or Text)
+data Ident = Ident SourcePos Text
     deriving Eq
 
 instance Show Ident where
@@ -171,5 +174,5 @@ instance Show Ident where
         , show $ sourceColumn pos ]
 
 -- | Extract the name of an identifier.
-fromIdent :: Ident -> String
+fromIdent :: Ident -> Text
 fromIdent (Ident _ name) = name
