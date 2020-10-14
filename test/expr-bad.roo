@@ -17,4 +17,5 @@ procedure main()
     write "hello" + 2;
     write "3" < 4;
     write 3 < "4";
+    write 1 < false;
 }

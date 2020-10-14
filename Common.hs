@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Common where
 
 import Control.Monad.State
@@ -13,8 +15,16 @@ import qualified Data.Map.Strict as Map
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 newtype Register = Register Int
+    deriving Eq
+
 instance Show Register where
-    show (Register r) = show r
+    show (Register r) = "r" <> show r
+
+newtype StackSlot = StackSlot Int
+    deriving Eq
+
+instance Show StackSlot where
+    show (StackSlot l) = show l
 
 -- | Concatenates a list of pairs of lists.
 concatPair ::[([a], [b])] -> ([a], [b])
@@ -22,6 +32,14 @@ concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> acc
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
+
+countWithNoun :: (Show a ,Integral a) => a -> Text -> Text
+countWithNoun x noun
+    | x == 1    = "1 " <> noun
+    | otherwise = tshow x <> " " <> noun <> "s"
+
+enumerate :: [a] -> [(Int, a)]
+enumerate = zip [0..]
 
 -- | The different data types.
 data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Type)

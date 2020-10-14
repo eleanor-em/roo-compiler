@@ -30,8 +30,8 @@ import Text.Pretty.Simple (pPrint)
 import Common
 import RooParser (pProgram, ParsedAst)
 import RooPrettyPrinter (prettyPrint)
-import RooCompile (compileProgram )
-import System.IO (stderr)
+import RooCompile (compileProgram)
+import System.IO (hPrint, stderr)
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -107,7 +107,7 @@ getAst progNames =
             case output of 
                 Right ast -> return (ast, lines input)
                 Left  err -> do
-                    print err
+                    hPrint stderr err
                     exitFailure
 
 -- | Main function of Roo. Grab the flags, and print a usage message if incorrect

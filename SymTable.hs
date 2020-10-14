@@ -28,7 +28,7 @@ instance Show ProcSymType where
 -- | Represents a procedure symbol with a type, location on the stack, and source position.
 data ProcSymbol = ProcSymbol
     { symType :: ProcSymType
-    , symLocation :: Int
+    , symLocation :: StackSlot
     , symPos :: SourcePos
     , symName :: Text }
     deriving Eq
@@ -52,7 +52,7 @@ instance Show ProcSymbol where
 -- | Represents a local symbol table for a procedure. Contains the types and ref/val status of
 --   parameters in order, and a table of procedure symbols.
 data LocalTable = LocalTable
-    { localParams :: [ProcSymType]
+    { localParams :: [ProcSymbol]
     , localSymbols :: Map Text ProcSymbol }
 
 instance Show LocalTable where
@@ -84,7 +84,7 @@ instance Show RootTable where
 data ProcSymbolState = ProcSymbolState
     { location :: Int
     , psTable  :: Map Text ProcSymbol
-    , psParams :: [ProcSymType] }
+    , psParams :: [ProcSymbol] }
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
@@ -175,14 +175,15 @@ symbolsParam symbols param = do
     let result = procCheckExisting symbols ty (Ident pos name) procSymbols
 
     addErrorsOr result $ \ty -> do
-        let loc = location procSymbols
-        let table = psTable procSymbols
+        let loc    = location procSymbols
+        let table  = psTable procSymbols
         let params = psParams procSymbols
-        let ty' = cons ty
+        let ty'    = cons ty
+        let sym = ProcSymbol ty' (StackSlot loc) pos name
 
         putEither (procSymbols
-            { psTable = Map.insert name (ProcSymbol ty' loc pos name) table
-            , psParams = params <> [ty']
+            { psTable = Map.insert name sym table
+            , psParams = params <> [sym]
             , location = loc + 1 })
     where
         (cons, ty, pos, name) = case param of
@@ -210,5 +211,5 @@ symbolsDecl symbols (VarDecl ty idents) = do
                 let loc = location procSymbols
                 let table = psTable procSymbols
                 putEither (procSymbols
-                    { psTable = Map.insert name (ProcSymbol (ValSymbol ty) loc pos name) table
+                    { psTable = Map.insert name (ProcSymbol (ValSymbol ty) (StackSlot loc) pos name) table
                     , location = loc + sizeof ty })

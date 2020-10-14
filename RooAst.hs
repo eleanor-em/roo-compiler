@@ -10,7 +10,6 @@ up the Roo Language.
 module RooAst where
 
 import Data.Text (Text)
-import qualified Data.Text as T
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
@@ -160,6 +159,12 @@ data Lvalue
     | LArray Ident LocatedExpr
     | LArrayMember Ident LocatedExpr Ident
     deriving (Show, Eq)
+
+locateLvalue :: Lvalue -> SourcePos
+locateLvalue (LId (Ident pos _)) = pos
+locateLvalue (LMember (Ident pos _) _) = pos
+locateLvalue (LArray (Ident pos _) _) = pos
+locateLvalue (LArrayMember (Ident pos _) _ _) = pos
 
 -- | Identifier is a non empty sequence of chars (or Text)
 data Ident = Ident SourcePos Text

@@ -2,7 +2,6 @@
 
 module RooAnalyse where
 
-import Debug.Trace (trace)
 import qualified Data.Map.Strict as Map
 
 import Common
@@ -18,11 +17,9 @@ hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
     Nothing       -> False
 
 -- | An expression paired with its type.
-data TypedExpr = TypedExpr Type Expression
-
--- | Extracts the type of a TypedExpr.
-typeof :: TypedExpr -> Type
-typeof (TypedExpr ty _) = ty
+data TypedExpr = TypedExpr 
+    { typeof :: Type
+    , innerExp :: Expression }
 
 -- | Type-checks a located expression, and returns the expression annotated with its type
 --   if successful. This is a helpful shortcut for code generation.
@@ -44,7 +41,7 @@ typecheckExpression :: AliasTable -> LocalTable -> Expression -> Either [Analysi
 typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> pure    $ TypedExpr (procSymType $ symType sym) expr
-        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown identifier `" <> ident <> "`"
+        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
 typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) indexExpr))
     = case Map.lookup ident (localSymbols locals) of
@@ -54,7 +51,7 @@ typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) index
                     typecheckArrayIndex aliases locals indexExpr
                     pure $ TypedExpr ty expr
                 ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown identifier `" <> ident <> "`"
+        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
 -- Literals are always well-typed.
 typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
@@ -134,8 +131,8 @@ typecheckExpression _ _ _ = error "typecheckExpression: not yet implemented"
 
 analyseLvalue :: LocalTable -> Lvalue -> Either [AnalysisError] ProcSymbol
 analyseLvalue symbols (LId (Ident pos name)) = do
-    sym <- unwrapOr (trace (show $ localSymbols symbols) $ Map.lookup name $ localSymbols symbols)
-                    (liftOne $ errorPos pos $ "in statement: unknown identifier `" <> name <> "`")
+    sym <- unwrapOr (Map.lookup name $ localSymbols symbols)
+                    (liftOne $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
     
     let ty = rawSymType sym
 
@@ -145,6 +142,6 @@ analyseLvalue symbols (LId (Ident pos name)) = do
         _          -> Right sym
     where
         typeError ty = liftOne $ errorPos pos $
-            "expected identifier of primitive type, found `" <> tshow ty <> "`" 
+            "expected variable of primitive type, found `" <> tshow ty <> "`" 
 
 analyseLvalue _ _ = error "analyseLvalue: not yet implemented"

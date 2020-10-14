@@ -1,9 +1,17 @@
-procedure main()
+procedure foo (integer val x, integer val y)
+{
+    writeln x * y;
+}
+
+procedure main ()
     integer a;
+    boolean bool;
 {
     write "Hello folks\n";
     writeln 1 + 2 / 3;
     writeln true and not false or false;
     a <- 1 + 2 + 3;
     writeln a;
+
+    call foo(1 + 3 / 4, 5 - 2 * 3);
 }
