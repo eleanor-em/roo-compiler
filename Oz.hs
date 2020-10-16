@@ -18,6 +18,9 @@ ozPopStackFrame n = ["pop_stack_frame " <> tshow n]
 ozLoad :: Register -> StackSlot -> [Text]
 ozLoad register location = ["load " <> tshow register <> ", " <> tshow location]
 
+ozLoadIndirect :: Register -> Register -> [Text]
+ozLoadIndirect value pointer = ["load_indirect " <> tshow value <> ", " <> tshow pointer]
+
 ozStore :: StackSlot -> Register -> [Text]
 ozStore location register = ["store " <> tshow location <> ", " <> tshow register]
 

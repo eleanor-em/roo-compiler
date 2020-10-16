@@ -3,6 +3,7 @@
 module RooCompile where
 
 import qualified Data.Map.Strict as Map
+
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -21,8 +22,11 @@ compileProgram program@(Program _ _ procs) = do
     if not (hasMain symbols) then
         Left [AnalysisError 0 0 "main procedure with no parameters missing"]
     else do
-        result <- addHeader <$> mapErr (errs <>) (concatEither $ map (compileProc symbols) procs)
-        Right $ separate result
+        result <- addHeader <$> leftmap (errs <>) (concatEither $ map (compileProc symbols) procs)
+        if null errs then
+            return $ separate result
+        else
+            Left errs
     where
         separate  = map (<> "\n")
         addHeader = (["call proc_main", "halt"] <>)
@@ -111,7 +115,7 @@ compileStatement symbols locals (SAssign lvalue expr) = do
         Left $ errorWithNote (locate expr) err (symPos sym) note
     else do
         (register, postEval) <- runEither (compileExpr expr') (initialBlockState symbols locals)
-        (_, final) <- runEither (storeSymbol register sym) postEval
+        (_, final)           <- runEither (storeSymbol register sym) postEval
         return $ blockInstrs final
 
 compileStatement _ locals (SRead lvalue) = do
@@ -166,6 +170,7 @@ compileStatement symbols locals (SCall (Ident pos procName) args) = do
     -- Reserve registers for the arguments
     (registers, final) <- runEither compileArgs $ BlockState symbols locals [] (length args)
     -- TODO: load address as necessary
+
     let moves = concatMap (uncurry ozMove) (zip (map Register [0..]) registers)
 
     return $ blockInstrs final <> moves <> ozCall (makeProcLabel procName)
@@ -238,7 +243,12 @@ loadSymbol (ProcSymbol (ValSymbol _) location _ _) = do
     addInstrs $ ozLoad register location
     return register
 
-loadSymbol _ = error "loadSymbol RefSymbol: not yet implemented"
+loadSymbol (ProcSymbol (RefSymbol _) location _ _) = do
+    ptr <- useRegister
+    register <- useRegister
+    addInstrs $ ozLoad         ptr location
+             <> ozLoadIndirect register ptr
+    return register
 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do

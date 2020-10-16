@@ -4,6 +4,8 @@ module Common where
 
 import Control.Monad.State
 
+import qualified Data.Bifunctor as B
+
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -40,6 +42,9 @@ countWithNoun x noun
 
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
+
+leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
+leftmap = B.first
 
 -- | The different data types.
 data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Type)
@@ -92,14 +97,9 @@ errorWithNote errPos err notePos note =
     [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
     , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
 
--- | Map the error part of the Either.
-mapErr :: (a -> c) -> Either a b -> Either c b
-mapErr f (Left err)  = Left (f err)
-mapErr _ (Right val) = Right val
-
 -- | Lift a single error into a singleton list.
 liftOne :: Either a b -> Either [a] b
-liftOne = mapErr pure
+liftOne = leftmap pure
 
 -- | If Just x is given produces a list from x, otherwise returns an empty list.
 ifJust :: Maybe a -> (a -> [b]) -> [b]
@@ -108,7 +108,7 @@ ifJust = flip concatMap
 concatEither :: [Either [a] [b]] -> Either [a] [b]
 concatEither list
         | null lefts' = Right rights'
-        | otherwise  = Left lefts'
+        | otherwise   = Left lefts'
     where
         lefts'  = concat $ lefts list
         rights' = concat $ rights list
