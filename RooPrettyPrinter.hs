@@ -13,8 +13,6 @@ module RooPrettyPrinter (prettyPrint, prettyBinOp, prettyStatement) where
 
 import Common
 
-import Data.Foldable (foldMap')
-
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -33,8 +31,8 @@ endline = ";\n"
 -- | Take the AST of a program and return a pretty print formatted string 
 prettyPrint :: Program -> Text
 prettyPrint (Program records arrays procs) = mconcat
-    [ foldMap' prettyRecord records
-    , foldMap' prettyArrayDecl arrays
+    [ foldMap prettyRecord records
+    , foldMap prettyArrayDecl arrays
     , if not (null records && null arrays) then "\n" else ""
     , T.intercalate "\n" (map prettyProcedure procs) ]
 
@@ -118,7 +116,7 @@ prettyVarDecls (VarDecl typeName idents) = mconcat
 --   appropriately formatted
 prettyAllStatements :: [Statement] -> Int -> Text
 prettyAllStatements body startingIndent
-    = foldMap' (prettyStatement startingIndent) body
+    = foldMap (prettyStatement startingIndent) body
 
 -----------------------------------
 -- Statements Pretty Printers 
