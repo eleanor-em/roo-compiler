@@ -2,6 +2,7 @@
 
 module RooCompile where
 
+import Data.Maybe (catMaybes)
 import qualified Data.Map.Strict as Map
 
 import Data.Text (Text)
@@ -54,9 +55,9 @@ compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements)
             let addCommentAndCompile st = addCommentTo (prettyStatement 0 st) <$> compileStatement symbols locals st
             instrs <- concatEither $ map addCommentAndCompile statements
 
-            let numLocals = Map.size (localSymbols locals)
-            let prologue = if numLocals > 0 then ozPushStackFrame numLocals else []
-            let epilogue = if numLocals > 0 then ozPopStackFrame  numLocals else []
+            let stackSize = localStackSize locals
+            let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
+            let epilogue = if stackSize > 0 then ozPopStackFrame  stackSize else []
 
             -- Load arguments
             let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
@@ -90,12 +91,14 @@ compileStatement _ _ (SWrite (LocatedExpr _ (EConst (LitString str))))
 compileStatement symbols locals (SWrite expr) = do
     TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals expr
     (result, final) <- runEither (compileExpr expr) (initialBlockState symbols locals)
+    case result of
+        Just result -> 
+            let op TInt  = ozWriteInt
+                op TBool = ozWriteBool
+                op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`" in 
+            return $ blockInstrs final <> op ty result
 
-    let op TInt  = ozWriteInt
-        op TBool = ozWriteBool
-        op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`" in 
-        
-        return $ blockInstrs final <> op ty result
+        _ -> return []
 
 -- | writeln expr;
 compileStatement symbols locals (SWriteLn expr) = do
@@ -104,34 +107,44 @@ compileStatement symbols locals (SWriteLn expr) = do
 
 -- | lvalue <- expr;
 compileStatement symbols locals (SAssign lvalue expr) = do
+    -- TODO: check ty' is of primitive type
     TypedExpr ty' expr' <- analyseExpression (rootAliases symbols) locals expr
-    
-    sym <- analyseLvalue locals lvalue
-    let ty = rawSymType sym
-    
-    if ty /= ty' then
-        let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
-            note = "`" <> symName sym <> "` declared here:" in
-        Left $ errorWithNote (locate expr) err (symPos sym) note
-    else do
-        (register, postEval) <- runEither (compileExpr expr') (initialBlockState symbols locals)
-        (_, final)           <- runEither (storeSymbol register sym) postEval
-        return $ blockInstrs final
+    sym <- analyseLvalue (rootAliases symbols) locals lvalue
+    let ty = lvalueType sym
 
-compileStatement _ locals (SRead lvalue) = do
-    sym <- analyseLvalue locals lvalue
+    case ty of
+        TArray _ _ -> typeError ty
+        TRecord _  -> typeError ty
+        _ -> do    
+            if ty /= ty' then
+                let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
+                    note = "`" <> lvalueName sym <> "` declared here:" in
+                Left $ errorWithNote (locate expr) err (lvaluePos sym) note
+            else do
+                (register, postEval) <- runEither (compileExpr expr') (initialBlockState symbols locals)
+                case register of
+                    Just register -> do
+                        (_, final) <- runEither (storeSymbol register sym) postEval
+                        return $ blockInstrs final
+                    _ -> return []
+    where
+        typeError ty = liftOne $ errorPos (locateLvalue lvalue) $
+            "expected variable of primitive type on LHS of `<-`, found `" <> tshow ty <> "`" 
 
-    -- Handle the different types of symbols appropriately
-    case symType sym of
-        ValSymbol TInt  -> return $ ozReadInt (symLocation sym)
-        ValSymbol TBool -> return $ ozReadBool (symLocation sym)
+compileStatement symbols locals (SRead lvalue) = do
+    sym <- analyseLvalue (rootAliases symbols) locals lvalue
+    let ty = lvalueType sym
 
-        RefSymbol TInt  -> return $ ozReadIntIndirect (symLocation sym)
-        RefSymbol TBool -> return $ ozReadBoolIndirect (symLocation sym)
-
-        _ -> let err  = "expecting `integer` or `boolean`, found `" <> tshow (rawSymType sym) <> "`"
-                 note = "`" <> symName sym <> "` declared here:" in
-            Left $ errorWithNote (locateLvalue lvalue) err (symPos sym) note
+    readInstrs <- case ty of
+        TInt  -> Right ozReadInt
+        TBool -> Right ozReadBool
+        _     -> do
+            -- TODO: error with note
+            let err  = "expecting `integer` or `boolean` after `read`, found `" <> tshow ty <> "`" in
+                liftOne $ errorPos (lvaluePos sym) err
+    (_, final) <- runEither (storeLvalue lvalue (Register 0))
+                                (BlockState symbols locals readInstrs 1)
+    return $ blockInstrs final
 
 compileStatement symbols locals (SCall (Ident pos procName) args) = do
     (targetPos, targetProc) <- unwrapOr (Map.lookup procName $ rootProcs  symbols)
@@ -165,15 +178,38 @@ compileStatement symbols locals (SCall (Ident pos procName) args) = do
 
     concatEither $ map reportErr mismatched
 
-    -- Compile arguments
-    let compileArgs = mapM (compileExpr . innerExp) typedArgs
-    -- Reserve registers for the arguments
-    (registers, final) <- runEither compileArgs $ BlockState symbols locals [] (length args)
-    -- TODO: load address as necessary
+    -- Check reference args are filled with lvalues
+    let mismatched = filter (\((_, a), b) -> not (checkRefArgs a b))
+                            (zip (enumerate typedArgs) params)
 
-    let moves = concatMap (uncurry ozMove) (zip (map Register [0..]) registers)
+    let reportErr ((i, _), symbol) = let err  = mconcat [ "in argument: expecting lvalue" ]
+                                         note = "parameter declared here:" in
+            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+
+    concatEither $ map reportErr mismatched
+
+    -- Compile arguments
+    let typedArgs' = zip typedArgs params
+    (registers, final) <- runEither (mapM compileArg typedArgs') $ BlockState symbols locals [] (length args)
+
+    let moves = concatMap (uncurry ozMove)
+                          (zip (map Register [0..]) (catMaybes registers))
 
     return $ blockInstrs final <> moves <> ozCall (makeProcLabel procName)
+
+    where
+        -- | Checks whether the expression and symbol are either:
+        --   lvalue + ref
+        --   any + val
+        checkRefArgs (TypedExpr _ (ELvalue _)) (ProcSymbol (RefSymbol _) _ _ _) = True
+        checkRefArgs _ (ProcSymbol (RefSymbol _) _ _ _) = False
+        checkRefArgs _ _ = True
+
+        -- | Compile the argument, loading the address for ref types and the value for val types
+        compileArg (TypedExpr _ (ELvalue lvalue), ProcSymbol (RefSymbol _) _ _ _)
+            = loadAddress lvalue
+        compileArg (TypedExpr _ expr, _)
+            = compileExpr expr
 
 -- --TODO: Handling the if and while statements  
 -- compileStatement symbols locals (SIf expr statements) = do 
@@ -197,16 +233,19 @@ addInstrs instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
-compileExpr :: Expression -> EitherState BlockState Register
+compileExpr :: Expression -> EitherState BlockState (Maybe Register)
 compileExpr (ELvalue lvalue) = loadLvalue lvalue
 
-compileExpr (EConst lit) = loadConst lit
+compileExpr (EConst lit) = Just <$> loadConst lit
 
 compileExpr (EUnOp op expr) = do
     result <- useRegister
     eval <- compileExpr (fromLocated expr)
-    addInstrs (ozOp result eval)
-    return result
+    case eval of
+        Just eval -> do
+            addInstrs (ozOp result eval)
+            return $ Just result
+        _ -> return Nothing        
 
     where
         ozOp = case op of
@@ -217,8 +256,11 @@ compileExpr (EBinOp op lexp rexp) = do
     result <- useRegister
     lhs <- compileExpr (fromLocated lexp)
     rhs <- compileExpr (fromLocated rexp)
-    addInstrs (ozOp result lhs rhs)
-    return result
+    case (lhs, rhs) of
+        (Just lhs, Just rhs) -> do
+            addInstrs (ozOp result lhs rhs)
+            return $ Just result
+        _ -> return Nothing
 
     where
         ozOp = case op of
@@ -235,27 +277,96 @@ compileExpr (EBinOp op lexp rexp) = do
             BinTimes -> ozTimes
             BinDivide -> ozDivide
 
-loadLvalue :: Lvalue -> EitherState BlockState Register
-loadLvalue (LId (Ident _ name)) = do
+loadLvalue :: Lvalue -> EitherState BlockState (Maybe Register)
+loadLvalue lvalue = do
     current <- getEither
-    case Map.lookup name (localSymbols $ blockLocalSyms current) of
-        Just sym -> loadSymbol sym
-        Nothing  -> error "internal error: type check failed"
+    case analyseLvalue (rootAliases $ blockRootSyms current) (blockLocalSyms current) lvalue of
+        Left errs -> do
+            addErrors errs
+            return Nothing
+        Right sym -> loadSymbol sym
 
-loadLvalue _ = error "loadLvalue: not yet implemented"
 
-loadSymbol :: ProcSymbol -> EitherState BlockState Register
-loadSymbol (ProcSymbol (ValSymbol _) location _ _) = do
+loadAddress :: Lvalue -> EitherState BlockState (Maybe Register)
+loadAddress lvalue = do
+    current <- getEither
+    case analyseLvalue (rootAliases $ blockRootSyms current) (blockLocalSyms current) lvalue of
+        Left errs -> do
+            addErrors errs
+            return Nothing
+
+        Right (TypedRefLvalue _ location offset _ _) ->
+            if noOffset == offset then do
+                -- Copy the reference to the target
+                register <- useRegister
+                addInstrs $ ozLoad register location
+                return $ Just register
+            else do
+                -- Copy the reference to the target and add offset
+                baseReg <- useRegister
+                offsetReg <- compileExpr offset
+                case offsetReg of
+                    Just offsetReg -> do
+                        addInstrs $ ozLoad baseReg location
+                                 <> ozSubOffset baseReg baseReg offsetReg
+                        return $ Just baseReg
+                    _ -> return Nothing
+
+        Right (TypedValLvalue _ location offset _ _) ->
+            if noOffset == offset then do
+                -- Load the address directly
+                register <- useRegister
+                addInstrs $ ozLoadAddress register location
+                return $ Just register
+            else do
+                -- Load the address and add offset
+                baseReg <- useRegister
+                offsetReg <- compileExpr offset
+                case offsetReg of
+                    Just offsetReg -> do
+                        addInstrs $ ozLoadAddress baseReg location
+                                 <> ozSubOffset baseReg baseReg offsetReg
+                        return $ Just baseReg
+                    _ -> return Nothing
+
+loadSymbol :: TypedLvalue -> EitherState BlockState (Maybe Register)
+loadSymbol (TypedValLvalue _ location offset _ _) = do
     register <- useRegister
-    addInstrs $ ozLoad register location
-    return register
+    if noOffset == offset then do
+        addInstrs $ ozLoad register location
+        return $ Just register
+    else do
+        -- Compute a value offset
+        baseReg <- useRegister
+        offsetReg <- compileExpr offset
+        case offsetReg of
+            Just offsetReg -> do
+                addInstrs $ ozLoadAddress baseReg location
+                         <> ozSubOffset baseReg baseReg offsetReg
+                         <> ozLoadIndirect register baseReg
+                return $ Just register
 
-loadSymbol (ProcSymbol (RefSymbol _) location _ _) = do
-    ptr <- useRegister
-    register <- useRegister
-    addInstrs $ ozLoad         ptr location
-             <> ozLoadIndirect register ptr
-    return register
+            _ -> return Nothing
+
+loadSymbol (TypedRefLvalue _ location offset _ _) =
+    if noOffset == offset then do
+        ptr <- useRegister
+        register <- useRegister
+        addInstrs $ ozLoad ptr location
+                 <> ozLoadIndirect register ptr
+        return $ Just register
+    else do
+        -- Compute a reference offset
+        register <- useRegister
+        baseReg <- useRegister
+        offsetReg <- compileExpr offset
+        case offsetReg of
+            Just offsetReg -> do
+                addInstrs $ ozLoad baseReg location
+                         <> ozSubOffset baseReg baseReg offsetReg
+                         <> ozLoadIndirect register baseReg
+                return $ Just register
+            _ -> return Nothing
 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do
@@ -273,14 +384,32 @@ loadConst _ = error "internal error: tried to load Text constant"
 storeLvalue :: Lvalue -> Register -> EitherState BlockState ()
 storeLvalue lvalue register = do
     current <- getEither
-    addErrorsOr (analyseLvalue (blockLocalSyms current) lvalue) $ \sym ->
-        storeSymbol register sym
+    addErrorsOr (analyseLvalue (rootAliases $ blockRootSyms current) (blockLocalSyms current) lvalue)
+                (storeSymbol register)
 
-storeSymbol :: Register -> ProcSymbol -> EitherState BlockState ()
-storeSymbol register (ProcSymbol (ValSymbol _) location _ _)
-    = addInstrs $ ozStore location register
+storeSymbol :: Register -> TypedLvalue -> EitherState BlockState ()
+storeSymbol register (TypedValLvalue _ location offset _ _) =
+    if noOffset == offset then
+        addInstrs $ ozStore location register
+    else do
+        baseReg <- useRegister
+        offsetReg <- compileExpr offset
+        case offsetReg of
+            Just offsetReg -> addInstrs $ ozLoadAddress baseReg location
+                                       <> ozSubOffset baseReg baseReg offsetReg
+                                       <> ozStoreIndirect baseReg register
+            _ -> return ()
 
-storeSymbol register (ProcSymbol (RefSymbol _) location _ _) = do
-    ptr <- useRegister
-    addInstrs $ ozLoad          ptr location
-             <> ozStoreIndirect ptr register
+storeSymbol register (TypedRefLvalue _ location offset _ _) =
+    if noOffset == offset then do
+        ptr <- useRegister
+        addInstrs $ ozLoad         ptr location
+                <> ozStoreIndirect ptr register
+    else do
+        baseReg <- useRegister
+        offsetReg <- compileExpr offset
+        case offsetReg of
+            Just offsetReg -> addInstrs $ ozLoad baseReg location
+                                       <> ozSubOffset baseReg baseReg offsetReg
+                                       <> ozStoreIndirect baseReg register
+            _ -> return ()

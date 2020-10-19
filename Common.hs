@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, GeneralisedNewtypeDeriving #-}
 
 module Common where
 
@@ -21,7 +21,10 @@ instance Show Register where
     show (Register r) = "r" <> show r
 
 newtype StackSlot = StackSlot Int
-    deriving Eq
+    deriving (Eq, Num)
+
+stackSlotToInt :: StackSlot -> Int
+stackSlotToInt (StackSlot x) = x
 
 instance Show StackSlot where
     show (StackSlot l) = show l
@@ -33,7 +36,7 @@ concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> acc
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
-countWithNoun :: (Show a ,Integral a) => a -> Text -> Text
+countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun
     | x == 1    = "1 " <> noun
     | otherwise = tshow x <> " " <> noun <> "s"
@@ -44,8 +47,17 @@ enumerate = zip [0..]
 leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
 leftmap = B.first
 
+data Field = Field
+    { fieldPos :: SourcePos
+    , fieldOffset :: StackSlot
+    , fieldTy :: Type }
+    deriving Eq
+
+instance Show Field where
+    show = show . fieldTy
+
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text (SourcePos, Type))
+data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Field)
     deriving Eq
 
 liftPrimitive :: PrimitiveType -> Type
@@ -64,11 +76,11 @@ sizeof TBool = 1
 sizeof TString = 1
 sizeof TInt = 1
 sizeof (TArray size ty) = size * sizeof ty
-sizeof (TRecord map) = foldr ((+) . sizeof . snd) 0 map
+sizeof (TRecord map) = foldr ((+) . sizeof . fieldTy) 0 map
 
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Int Type | AliasRecord (Map Text (SourcePos, Type))
+data AliasType = AliasArray Int Type | AliasRecord (Map Text Field)
     deriving Eq
 
 instance Show AliasType where
