@@ -3,18 +3,16 @@
 module Common where
 
 import Control.Monad.State
-
 import qualified Data.Bifunctor as B
-
 import Data.Text (Text)
 import qualified Data.Text as T
-
 import Data.Either (lefts, rights)
-
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
+
+import RooAst
 
 newtype Register = Register Int
     deriving Eq
@@ -47,8 +45,12 @@ leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
 leftmap = B.first
 
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Type)
+data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text (SourcePos, Type))
     deriving Eq
+
+liftPrimitive :: PrimitiveType -> Type
+liftPrimitive RawBoolType = TBool
+liftPrimitive RawIntType = TInt
 
 instance Show Type where
     show TBool   = "boolean"
@@ -62,11 +64,11 @@ sizeof TBool = 1
 sizeof TString = 1
 sizeof TInt = 1
 sizeof (TArray size ty) = size * sizeof ty
-sizeof (TRecord map) = foldr ((+) . sizeof) 0 map
+sizeof (TRecord map) = foldr ((+) . sizeof . snd) 0 map
 
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Int Type | AliasRecord (Map Text Type)
+data AliasType = AliasArray Int Type | AliasRecord (Map Text (SourcePos, Type))
     deriving Eq
 
 instance Show AliasType where

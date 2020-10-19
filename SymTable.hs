@@ -13,6 +13,8 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 import Common
 import RooAst
 
+-- | 
+
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
     deriving Eq
@@ -88,14 +90,15 @@ data ProcSymbolState = ProcSymbolState
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
-getAllSymbols (Program _ arrays procs) = do
-    let (errs, arrays') = execEither (mapM_ symbolsArray arrays) Map.empty
-    let symbols = RootTable arrays' Map.empty
+getAllSymbols (Program records arrays procs) = do
+    let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
+    let (errs', aliases) = execEither (mapM_ symbolsArray arrays) records'
+    let symbols = RootTable aliases Map.empty
 
-    let (errs', procs') = execEither (mapM_ (symbolsProc symbols) procs) Map.empty    
-    let symbols = RootTable arrays' procs'
+    let (errs'', procs') = execEither (mapM_ (symbolsProc symbols) procs) Map.empty    
+    let symbols = RootTable aliases procs'
     
-    (errs <> errs', symbols)
+    (errs <> errs' <> errs'', symbols)
 
 -- | Looks up a possibly-aliased type and ensures it is well-formed.
 getAliasedType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
@@ -117,7 +120,7 @@ getPrimitiveType (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
 
 -- | Analyse a single array type declaration and extract any symbols.
 symbolsArray :: ArrayType -> EitherState AliasTable ()
-symbolsArray (ArrayType _ size ty (Ident pos name)) = do
+symbolsArray (ArrayType size ty (Ident pos name)) = do
     table <- getEither
 
     addErrorsOr (checkExisting table) (\val -> putEither $ Map.insert name val table)
@@ -131,8 +134,42 @@ symbolsArray (ArrayType _ size ty (Ident pos name)) = do
                 ty' <- getPrimitiveType ty
                 Right (pos, AliasArray size ty')
 
--- TODO: Records
+-----------------------------------
+-- Records
+-----------------------------------
+-- Analyse a single record type and extract any symbols.
+-- WIthin a given record, field names must be distinct 
+symbolsRecord :: Record -> EitherState AliasTable ()
+symbolsRecord (Record fieldDecls (Ident pos name)) = do 
+    table <- getEither  
 
+    -- | Check that the field names are unique and  
+    -- | TODO: fix this section 
+    let (errs, fieldDecls') = execEither (mapM_ checkFieldDecl fieldDecls) Map.empty 
+    addErrors errs 
+
+    case Map.lookup name table of
+        Just (otherPos, _) -> addErrors $
+                errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
+                              otherPos "first declared here:"
+        Nothing -> putEither $ Map.insert name (pos, AliasRecord fieldDecls') table
+
+-- | Check field declaration is correct, update our fieldDecls table and return any errors 
+checkFieldDecl :: FieldDecl -> EitherState (Map Text (SourcePos, Type)) ()
+checkFieldDecl (FieldDecl ty (Ident pos name)) = do 
+    fieldDecls <- getEither
+    addErrorsOr (checkExisting fieldDecls) (\val -> putEither $ Map.insert name val fieldDecls)
+
+    where 
+        checkExisting fieldDecls = case Map.lookup name fieldDecls of 
+            Just (otherPos, _) -> Left $
+                errorWithNote pos      ("redeclaration of field name `" <> name <> "`")
+                              otherPos "first declared here:"
+            Nothing -> Right (pos, liftPrimitive ty)
+
+-----------------------------------
+-- Procedures
+-----------------------------------
 -- | Analyse a single procedure declaration and extract any symbols.
 symbolsProc :: RootTable -> Procedure -> EitherState ProcTable ()
 symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) = do

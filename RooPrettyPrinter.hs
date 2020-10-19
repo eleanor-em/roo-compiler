@@ -50,7 +50,7 @@ prettyRecord (Record fields ident) = mconcat
 
 -- | Replaces an Array Declaration node with its pretty-printed representation
 prettyArrayDecl :: ArrayType -> Text
-prettyArrayDecl (ArrayType _ size typeName ident) = mconcat
+prettyArrayDecl (ArrayType size typeName ident) = mconcat
     [ "array[" <> tshow size <> "] "
     , prettyType typeName
     , " " <> fromIdent ident <> endline ]

@@ -117,13 +117,12 @@ pRecord = do
 -- | Parses an arrayType declaration and returns an ArrayType node if accepted 
 pArrayType :: Parser ArrayType 
 pArrayType = do
-        pos <- sourcePos
         reserved "array"
         numElems <- brackets $ pPositiveInt
         typeName <- pTypeName
         ident <- pIdent 
         semi
-        return (ArrayType pos numElems typeName ident)
+        return (ArrayType numElems typeName ident)
     <?>
         "array type"
 

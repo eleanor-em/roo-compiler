@@ -25,9 +25,7 @@ data Program = Program [Record] [ArrayType] [Procedure]
 --     
 --     1. a non-empty list of field declarations 
 --     2. an identifier 
-data Record = Record
-    { recordFields :: [FieldDecl]
-    , recordIdent  :: Ident }
+data Record = Record [FieldDecl] Ident
     deriving (Show, Eq)
 
 -- | An Array type node consists of:
@@ -35,7 +33,7 @@ data Record = Record
 --     1. an integer 
 --     2. a type name 
 --     3. an identifier 
-data ArrayType = ArrayType SourcePos Int LocatedTypeName Ident
+data ArrayType = ArrayType Int LocatedTypeName Ident
     deriving (Show, Eq)
 
 -- | A Procedure node consists of:

@@ -175,6 +175,13 @@ compileStatement symbols locals (SCall (Ident pos procName) args) = do
 
     return $ blockInstrs final <> moves <> ozCall (makeProcLabel procName)
 
+-- --TODO: Handling the if and while statements  
+-- compileStatement symbols locals (SIf expr statements) = do 
+--     TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals 
+--     -- the type of the expression checked must be boolean. 
+--     -- body must be well type statements 
+    
+
 compileStatement _ _ _ = error "compileStatement: not yet implemented"
 
 useRegister :: EitherState BlockState Register

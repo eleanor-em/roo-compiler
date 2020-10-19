@@ -1,3 +1,7 @@
+record {integer first; boolean second} test;
+record {integer first; boolean first} fail;
+array[10] integer fail;
+
 procedure foo (integer val x, integer val y)
 {
     writeln x * y;
