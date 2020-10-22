@@ -2,7 +2,7 @@
 
 module RooCompile where
 
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromJust)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -14,7 +14,7 @@ import RooAst
 import SymTable
 import Oz
 import Control.Monad (unless)
-import RooPrettyPrinter (prettyStatement)
+import RooPrettyPrinter (prettyStatement, prettyExpr)
 
 -- | effectively now the global state 
 data BlockState = BlockState
@@ -101,7 +101,6 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
         Nothing  -> error "internal error: missed a procedure somehow"
 
 commentStatement :: Statement -> EitherState BlockState ()
-commentStatement (SIf _ _) = error "commentStatement: cannot handle `if`"
 commentStatement (SWhile _ _) = error "commentStatement: cannot handle `while`"
 commentStatement SIfElse {} = error "commentStatement: cannot handle `if...else`"
 commentStatement st = addInstrs $ addComment $ prettyStatement 0 st
@@ -264,9 +263,41 @@ compileStatement locals st@(SCall (Ident pos procName) args) = do
             return $ blockInstrs final <>
                     map addIndent (moves <> ozCall (makeProcLabel procName))
 
-compileStatement _ (SIf _ _) = error "compileStatement: `if`: not yet implemented"
-compileStatement _ (SWhile _ _) = error "compileStatement: `while`: not yet implemented"
-compileStatement _ (SIfElse _ _ _) = error "compileStatement: `if`..`else`: not yet implemented"
+-- dealing with if statements  
+compileStatement locals (SIf expr statements) = do 
+    addInstrs $ addComment ("if " <> prettyExpr (fromLocated expr) <> " then")
+
+    current <- getEither
+    let symbols = rootAliases (blockSyms current)
+    fiLabel <- getLabel 
+
+    addErrorsOr (analyse symbols) $ \expr' -> do 
+        -- get the register where true/false is stored + the current state after compilation
+        register <- compileExpr locals expr'
+        addInstrs (ozBranchOnFalse (fromJust register) fiLabel) 
+        mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
+        addInstrs $ addComment "fi"
+        addInstrsRaw [fiLabel <> ":"]
+    where
+        analyse symbols = do 
+            TypedExpr ty expr' <- analyseExpression symbols locals expr
+
+            -- condition expression is incorrectly typed 
+            if ty /= TBool then 
+                liftOne $ errorPos (locate expr)
+                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+            else
+                return expr'
+
+compileStatement _ _ = error "compileStatement: not yet implemented"
+
+getLabel :: EitherState BlockState Text 
+getLabel = do 
+    current <- getEither 
+    let currentLabel = nextLabel current 
+    putEither (current { nextLabel = currentLabel + 1})
+    return $ "label_" <> (tshow currentLabel)
+
 
 compileExpr :: LocalTable -> Expression -> EitherState BlockState (Maybe Register)
 compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue

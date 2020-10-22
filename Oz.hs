@@ -86,10 +86,10 @@ ozReadBool :: [Text]
 ozReadBool = [ "call_builtin read_bool" ]
 
 ozBranchOnTrue :: Register -> Text -> [Text]
-ozBranchOnTrue register label = ["branch_on_true" <> tshow register <> label]  
+ozBranchOnTrue register label = ["branch_on_true " <> tshow register <> ", " <> label]  
 
 ozBranchOnFalse :: Register -> Text -> [Text]
-ozBranchOnFalse register label = ["branch_on_false" <> tshow register <> label] 
+ozBranchOnFalse register label = ["branch_on_false " <> tshow register <> ", " <> label] 
 
 ozBranch :: Text -> [Text]
 ozBranch label = ["branch_uncond " <> label]
