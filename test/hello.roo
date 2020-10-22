@@ -4,6 +4,8 @@ record
         boolean b
     }  test_t;
 
+array[10] integer array_t;
+
 procedure foo (integer val x, integer val y)
 {
     writeln x * y;
@@ -13,6 +15,7 @@ procedure main ()
     integer a;
     test_t foo;
     boolean bool;
+    array_t arr;
 {
     write "Hello folks\n";
     writeln 1 + 2 / 3;

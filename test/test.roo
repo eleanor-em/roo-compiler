@@ -10,13 +10,13 @@ record {
 
 array[12] boolean testArray;
 
-procedure main(integer  x  ,   integer val y)
+procedure main( )
 
 integer value;
 boolean other_Value';
 {
     value <- - --1;
-    b <- not not not ------1;
+    b <- 1;
     value <-- --1;
     value <- -3 * (-3 + 2) ;
     a.b <- "\"hello";

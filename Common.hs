@@ -102,7 +102,7 @@ data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
 --   and wraps it in an Either.
 errorPos :: SourcePos -> Text -> Either AnalysisError a
-errorPos pos err = Left $ AnalysisError (sourceLine pos)  (sourceColumn pos) err
+errorPos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
 
 -- | Creates an AnalysisError from a given SourcePos with a note giving more detail
 --   at another SourcePos.
@@ -114,11 +114,11 @@ errorWithNote errPos err notePos note =
 -- | Lift a single error into a singleton list.
 liftOne :: Either a b -> Either [a] b
 liftOne = leftmap pure
-
 -- | If Just x is given produces a list from x, otherwise returns an empty list.
 ifJust :: Maybe a -> (a -> [b]) -> [b]
 ifJust = flip concatMap
 
+-- | concats both left and right, but returns the one that exists 
 concatEither :: [Either [a] [b]] -> Either [a] [b]
 concatEither list
         | null lefts' = Right rights'
@@ -136,11 +136,16 @@ addErrors errs = do
     (prevErrs, state) <- get
     put (prevErrs <> errs, state)
 
+
 -- | Add the list of errors to the current EitherState, or if there are no errors perform
 --   an action.
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val
+
+includeEither :: Either [AnalysisError] () -> EitherState s ()
+includeEither (Left errs) = addErrors errs
+includeEither _ = pure ()
 
 -- | `get` for EitherState.
 getEither :: EitherState s s
@@ -152,10 +157,15 @@ putEither state = do
     (errs, _) <- get
     put (errs, state)
 
--- | `execState` for EitherState.
+(<?>) :: (a -> EitherState s ()) -> Maybe a -> EitherState s ()
+f <?> Just x  = f x
+_ <?> Nothing = void getEither
+
+-- | `execState` for EitherState. "run the state, return errors and final state"
 execEither :: EitherState s a -> s -> ([AnalysisError], s)
 execEither state initial = execState state ([], initial)
 
+--  runEither: "run the state, return errors, final state, *and* an extra value"
 runEither :: EitherState s a -> s -> Either [AnalysisError] (a, s)
 runEither state initial
     | null errs = Right (val, final)
