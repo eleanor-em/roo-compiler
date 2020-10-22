@@ -76,8 +76,21 @@ typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner))
 --  3. The operator is a comparison operator (in which case both sides must be
 --     of the same non-string type)
 typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs))
-    | op `elem` [BinOr, BinAnd]                          = checkBoth TBool
-    | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide] = checkBoth TInt
+    | op `elem` [BinOr, BinAnd]                                 = checkBoth TBool
+    | op `elem` [BinLt, BinLte, BinEq, BinNeq, BinGt, BinGte]   = do
+        ltype <- typeof <$> typecheckExpression aliases locals lhs
+        rtype <- typeof <$> typecheckExpression aliases locals rhs
+        if ltype == rtype then
+            pure    $ TypedExpr TBool expr
+        else
+            liftOne $ errorPos lPos $ mconcat
+                [ "operands do not match: `"
+                , tshow ltype
+                , "` vs `"
+                , tshow rtype
+                , "`" ]
+        
+    | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
         ltype <- typeof <$> typecheckExpression aliases locals lhs
         rtype <- typeof <$> typecheckExpression aliases locals rhs
