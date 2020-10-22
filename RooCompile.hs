@@ -289,7 +289,72 @@ compileStatement locals (SIf expr statements) = do
             else
                 return expr'
 
-compileStatement _ _ = error "compileStatement: not yet implemented"
+-- dealing with if/Else statements  
+compileStatement locals (SIfElse expr ifStatements elseStatements) = do 
+    addInstrs $ addComment ("if " <> prettyExpr (fromLocated expr) <> " then")
+
+    current <- getEither
+    let symbols = rootAliases (blockSyms current)
+    elseLabel <- getLabel 
+    afterLabel <- getLabel
+
+    addErrorsOr (analyse symbols) $ \expr' -> do 
+        -- get the register where true/false is stored + the current state after compilation
+        register <- compileExpr locals expr'
+        -- if condition is false -> go to else 
+        addInstrs (ozBranchOnFalse (fromJust register) elseLabel) 
+        -- otherwise do these statements 
+        mapM_ (\st -> resetBlockRegs >> compileStatement locals st) ifStatements 
+        -- now goto after the if block 
+        addInstrs (ozBranch afterLabel)
+        addInstrsRaw [elseLabel <> ":"]
+        addInstrs $ addComment "else"
+        mapM_ (\st -> resetBlockRegs >> compileStatement locals st) elseStatements
+        addInstrs $ addComment "fi"
+    where
+        analyse symbols = do 
+            TypedExpr ty expr' <- analyseExpression symbols locals expr
+
+            -- condition expression is incorrectly typed 
+            if ty /= TBool then 
+                liftOne $ errorPos (locate expr)
+                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+            else
+                return expr'
+
+-- dealing with while statements  
+compileStatement locals (SWhile expr statements) = do 
+    addInstrs $ addComment ("while " <> prettyExpr (fromLocated expr) <> " do")
+
+    current <- getEither
+    let symbols = rootAliases (blockSyms current)
+    beginLabel <- getLabel
+    falseLabel <- getLabel 
+
+    addErrorsOr (analyse symbols) $ \expr' -> do 
+        
+        addInstrsRaw [beginLabel <> ":"]
+        -- get the register where true/false is stored + the current state after compilation
+        register <- compileExpr locals expr'
+        -- if condition is false --> skip the while loop 
+        addInstrs (ozBranchOnFalse (fromJust register) falseLabel) 
+        -- otherwise do these statements
+        mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
+        -- go to start 
+        addInstrs (ozBranch beginLabel)
+        addInstrs $ addComment "od"
+        addInstrsRaw [falseLabel <> ":"]
+        
+    where
+        analyse symbols = do 
+            TypedExpr ty expr' <- analyseExpression symbols locals expr
+
+            -- condition expression is incorrectly typed 
+            if ty /= TBool then 
+                liftOne $ errorPos (locate expr)
+                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+            else
+                return expr'
 
 getLabel :: EitherState BlockState Text 
 getLabel = do 
