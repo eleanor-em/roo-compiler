@@ -7,7 +7,7 @@ procedure isqrt_rec (integer val x, integer val n, integer result)
     if next_x = x or next_x = x + 1 then
         result <- next_x;
     else
-        call isqrt_rec(x, n, result);
+        call isqrt_rec(next_x, n, result);
     fi
 }
 

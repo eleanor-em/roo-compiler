@@ -307,10 +307,11 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) ifStatements 
         -- now goto after the if block 
         addInstrs (ozBranch afterLabel)
-        addInstrsRaw [elseLabel <> ":"]
         addInstrs $ addComment "else"
+        addInstrsRaw [elseLabel <> ":"]
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) elseStatements
         addInstrs $ addComment "fi"
+        addInstrsRaw [afterLabel <> ":"]
     where
         analyse symbols = do 
             TypedExpr ty expr' <- analyseExpression symbols locals expr
