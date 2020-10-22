@@ -32,11 +32,6 @@ procedure main ()
             found_witness <- false;
             call isqrt(n, sqrt_n);
 
-            write "checking ";
-            write x;
-            write " to ";
-            writeln sqrt_n + 1;
-
             while not found_witness and x <= sqrt_n + 1 do
                 if n / x * x = n then
                     found_witness <- true;
