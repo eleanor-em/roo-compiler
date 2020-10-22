@@ -3,6 +3,9 @@
 module RooAnalyse where
 
 import qualified Data.Map.Strict as Map
+import Data.Text (Text)
+
+import Text.Parsec (SourcePos)
 
 import Common
 
@@ -43,15 +46,9 @@ typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
         Just sym -> pure    $ TypedExpr (procSymType $ symType sym) expr
         Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
-typecheckExpression aliases locals expr@(ELvalue (LArray (Ident pos ident) indexExpr))
-    = case Map.lookup ident (localSymbols locals) of
-        Just sym -> do
-            case procSymType $ symType sym of
-                TArray _ ty -> do
-                    typecheckArrayIndex aliases locals indexExpr
-                    pure $ TypedExpr ty expr
-                ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+typecheckExpression aliases locals expr@(ELvalue lvalue) = do
+    ty <- analyseLvalue aliases locals lvalue
+    return $ TypedExpr (lvalueType ty) expr
 
 -- Literals are always well-typed.
 typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
@@ -79,8 +76,21 @@ typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner))
 --  3. The operator is a comparison operator (in which case both sides must be
 --     of the same non-string type)
 typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs))
-    | op `elem` [BinOr, BinAnd]                          = checkBoth TBool
-    | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide] = checkBoth TInt
+    | op `elem` [BinOr, BinAnd]                                 = checkBoth TBool
+    | op `elem` [BinLt, BinLte, BinEq, BinNeq, BinGt, BinGte]   = do
+        ltype <- typeof <$> typecheckExpression aliases locals lhs
+        rtype <- typeof <$> typecheckExpression aliases locals rhs
+        if ltype == rtype then
+            pure    $ TypedExpr TBool expr
+        else
+            liftOne $ errorPos lPos $ mconcat
+                [ "operands do not match: `"
+                , tshow ltype
+                , "` vs `"
+                , tshow rtype
+                , "`" ]
+        
+    | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
         ltype <- typeof <$> typecheckExpression aliases locals lhs
         rtype <- typeof <$> typecheckExpression aliases locals rhs
@@ -127,21 +137,100 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                  , tshow ltype
                  , "`" ]
 
-typecheckExpression _ _ _ = error "typecheckExpression: not yet implemented"
+data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
+                 | TypedValLvalue Type StackSlot Expression Text SourcePos
 
-analyseLvalue :: LocalTable -> Lvalue -> Either [AnalysisError] ProcSymbol
-analyseLvalue symbols (LId (Ident pos name)) = do
-    sym <- unwrapOr (Map.lookup name $ localSymbols symbols)
+lvalueType :: TypedLvalue -> Type
+lvalueType (TypedRefLvalue ty _ _ _ _) = ty
+lvalueType (TypedValLvalue ty _ _ _ _) = ty
+
+lvalueName :: TypedLvalue -> Text
+lvalueName (TypedRefLvalue _ _ _ name _) = name
+lvalueName (TypedValLvalue _ _ _ name _) = name
+
+lvaluePos :: TypedLvalue -> SourcePos
+lvaluePos (TypedRefLvalue _ _ _ _ pos) = pos
+lvaluePos (TypedValLvalue _ _ _ _ pos) = pos
+
+symToTypedLvalue :: ProcSymbol -> Expression -> TypedLvalue
+symToTypedLvalue (ProcSymbol (RefSymbol ty) slot pos name) offset
+    = TypedRefLvalue ty slot offset name pos
+
+symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
+    = TypedValLvalue ty slot offset name pos
+
+noOffset :: Expression
+noOffset = EConst (LitInt 0)
+
+-- TODO: handle non-static offsets i.e. arrays
+analyseLvalue :: AliasTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
+analyseLvalue _ locals (LId (Ident pos name)) = do
+    sym <- unwrapOr (Map.lookup name $ localSymbols locals)
                     (liftOne $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
-    
-    let ty = rawSymType sym
+    return $ symToTypedLvalue sym noOffset
+
+analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
+    = case Map.lookup ident (localSymbols locals) of
+        Just sym -> do
+            case procSymType $ symType sym of
+                TArray _ ty -> do
+                    typecheckArrayIndex symbols locals indexExpr
+
+                    return $ symToTypedLvalue
+                        (ProcSymbol (cons sym ty)  (symLocation sym) pos ident)
+                        (fromLocated indexExpr)
+
+                ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
+        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+    where
+        cons ty = case symType ty of
+            ValSymbol _ -> ValSymbol
+            RefSymbol _ -> RefSymbol
+
+analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
+    recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
+                       (liftOne $ errorPos recPos $ "in statement: unknown variable `" <> recName <> "`")
+
+    let ty = rawSymType recSym
 
     case ty of
-        TArray _ _ -> typeError ty
-        TRecord _  -> typeError ty
-        _          -> Right sym
-    where
-        typeError ty = liftOne $ errorPos pos $
-            "expected variable of primitive type, found `" <> tshow ty <> "`" 
+        TRecord fieldMap -> do
+            fieldSym <- unwrapOr (Map.lookup fldName fieldMap)
+                                 (Left $ errorWithNote
+                                    fldPos ("in statement: unknown field `" <> recName <> "`")
+                                    (symPos recSym) "record declared here:")
+            let location = symLocation recSym + fieldOffset fieldSym
+            cons <- case symType recSym of
+                RefSymbol _ -> return TypedRefLvalue
+                ValSymbol _ -> return TypedValLvalue
 
-analyseLvalue _ _ = error "analyseLvalue: not yet implemented"
+            return $ cons (fieldTy fieldSym) location noOffset (recName <> "." <> fldName) fldPos
+
+        _ -> liftOne $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
+
+analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
+    = case Map.lookup arrName (localSymbols locals) of
+        Just sym -> do
+            case procSymType $ symType sym of
+                TArray _ ty@(TRecord fields) -> do
+                    typecheckArrayIndex symbols locals indexExpr
+                    case Map.lookup fldName fields of
+                        Just (Field _ offset innerTy) -> do
+                            let pos = locate indexExpr
+                            index <- if sizeof ty /= 1 then
+                                return $ EBinOp BinTimes (LocatedExpr pos (EConst (LitInt (sizeof ty)))) indexExpr
+                            else
+                                return $ fromLocated indexExpr
+
+                            return $ symToTypedLvalue
+                                (ProcSymbol (cons sym innerTy) (symLocation sym) pos (arrName <> "[]" <> fldName))
+                                (EBinOp BinPlus (LocatedExpr pos ((EConst . LitInt .stackSlotToInt) offset))
+                                                (LocatedExpr pos index))
+                        _ -> liftOne $ errorPos fldPos $ "in expression: unknown field name `" <> fldName <> "`"
+
+                ty -> liftOne $ errorPos arrPos $ "expected array of records, found `" <> tshow ty <> "`"
+        Nothing  -> liftOne $ errorPos arrPos $ "in expression: unknown variable `" <> arrName <> "`"
+    where
+        cons ty = case symType ty of
+            ValSymbol _ -> ValSymbol
+            RefSymbol _ -> RefSymbol

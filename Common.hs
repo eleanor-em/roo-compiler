@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, GeneralisedNewtypeDeriving #-}
 
 module Common where
 
@@ -21,7 +21,10 @@ instance Show Register where
     show (Register r) = "r" <> show r
 
 newtype StackSlot = StackSlot Int
-    deriving Eq
+    deriving (Eq, Num)
+
+stackSlotToInt :: StackSlot -> Int
+stackSlotToInt (StackSlot x) = x
 
 instance Show StackSlot where
     show (StackSlot l) = show l
@@ -33,7 +36,7 @@ concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> acc
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
-countWithNoun :: (Show a ,Integral a) => a -> Text -> Text
+countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun
     | x == 1    = "1 " <> noun
     | otherwise = tshow x <> " " <> noun <> "s"
@@ -44,8 +47,17 @@ enumerate = zip [0..]
 leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
 leftmap = B.first
 
+data Field = Field
+    { fieldPos :: SourcePos
+    , fieldOffset :: StackSlot
+    , fieldTy :: Type }
+    deriving Eq
+
+instance Show Field where
+    show = show . fieldTy
+
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text (SourcePos, Type))
+data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Field)
     deriving Eq
 
 liftPrimitive :: PrimitiveType -> Type
@@ -64,11 +76,11 @@ sizeof TBool = 1
 sizeof TString = 1
 sizeof TInt = 1
 sizeof (TArray size ty) = size * sizeof ty
-sizeof (TRecord map) = foldr ((+) . sizeof . snd) 0 map
+sizeof (TRecord map) = foldr ((+) . sizeof . fieldTy) 0 map
 
 -- | Specific types for aliases allow us to check more correctness without as much
 --   clumsy conversion.
-data AliasType = AliasArray Int Type | AliasRecord (Map Text (SourcePos, Type))
+data AliasType = AliasArray Int Type | AliasRecord (Map Text Field)
     deriving Eq
 
 instance Show AliasType where
@@ -90,7 +102,7 @@ data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
 --   and wraps it in an Either.
 errorPos :: SourcePos -> Text -> Either AnalysisError a
-errorPos pos err = Left $ AnalysisError (sourceLine pos)  (sourceColumn pos) err
+errorPos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
 
 -- | Creates an AnalysisError from a given SourcePos with a note giving more detail
 --   at another SourcePos.
@@ -102,7 +114,6 @@ errorWithNote errPos err notePos note =
 -- | Lift a single error into a singleton list.
 liftOne :: Either a b -> Either [a] b
 liftOne = leftmap pure
-
 -- | If Just x is given produces a list from x, otherwise returns an empty list.
 ifJust :: Maybe a -> (a -> [b]) -> [b]
 ifJust = flip concatMap
@@ -125,11 +136,16 @@ addErrors errs = do
     (prevErrs, state) <- get
     put (prevErrs <> errs, state)
 
+
 -- | Add the list of errors to the current EitherState, or if there are no errors perform
 --   an action.
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val
+
+includeEither :: Either [AnalysisError] () -> EitherState s ()
+includeEither (Left errs) = addErrors errs
+includeEither _ = pure ()
 
 -- | `get` for EitherState.
 getEither :: EitherState s s
@@ -140,6 +156,10 @@ putEither :: s -> EitherState s ()
 putEither state = do
     (errs, _) <- get
     put (errs, state)
+
+(<?>) :: (a -> EitherState s ()) -> Maybe a -> EitherState s ()
+f <?> Just x  = f x
+_ <?> Nothing = void getEither
 
 -- | `execState` for EitherState. "run the state, return errors and final state"
 execEither :: EitherState s a -> s -> ([AnalysisError], s)

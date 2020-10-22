@@ -1,6 +1,10 @@
-record {integer first; boolean second} test;
-record {integer first; boolean first} fail;
-array[10] integer fail;
+record
+    {
+        integer a;
+        boolean b
+    }  test_t;
+
+array[10] integer array_t;
 
 procedure foo (integer val x, integer val y)
 {
@@ -9,13 +13,25 @@ procedure foo (integer val x, integer val y)
 
 procedure main ()
     integer a;
+    test_t foo;
     boolean bool;
+    array_t arr;
 {
     write "Hello folks\n";
     writeln 1 + 2 / 3;
     writeln true and not false or false;
     a <- 1 + 2 + 3;
     writeln a;
+
+    arr[1] <- 2;
+
+    foo.a <- 42;
+    foo.b <- true;
+    writeln foo.a;
+    writeln foo.b;
+
+    read foo.a;
+    writeln foo.a;
 
     call foo(1 + 3 / 4, 5 - 2 * 3);
 }

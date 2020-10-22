@@ -18,6 +18,9 @@ ozPopStackFrame n = ["pop_stack_frame " <> tshow n]
 ozLoad :: Register -> StackSlot -> [Text]
 ozLoad register location = ["load " <> tshow register <> ", " <> tshow location]
 
+ozLoadAddress :: Register -> StackSlot -> [Text]
+ozLoadAddress register location = ["load_address " <> tshow register <> ", " <> tshow location]
+
 ozLoadIndirect :: Register -> Register -> [Text]
 ozLoadIndirect value pointer = ["load_indirect " <> tshow value <> ", " <> tshow pointer]
 
@@ -50,11 +53,12 @@ ozLte = ozTernOp "cmp_le_int"
 ozGt  = ozTernOp "cmp_gt_int"
 ozGte = ozTernOp "cmp_ge_int"
 
-ozPlus, ozMinus, ozTimes, ozDivide :: Register -> Register -> Register -> [Text]
+ozPlus, ozMinus, ozTimes, ozDivide, ozSubOffset :: Register -> Register -> Register -> [Text]
 ozPlus   = ozTernOp "add_int"
 ozMinus  = ozTernOp "sub_int"
 ozTimes  = ozTernOp "mul_int"
 ozDivide = ozTernOp "div_int"
+ozSubOffset = ozTernOp "sub_offset"
 
 ozIntConst :: Register -> Int -> [Text]
 ozIntConst register val = ["int_const " <> tshow register <> ", " <> tshow val]
@@ -75,23 +79,11 @@ ozWriteString val =
     [ "string_const r0, \"" <> val <> "\""
     , "call_builtin print_string" ]
 
-ozReadInt :: StackSlot -> [Text]
-ozReadInt slot = [ "call_builtin read_int" ] <> ozStore slot (Register 0)
+ozReadInt :: [Text]
+ozReadInt = [ "call_builtin read_int" ]
 
-ozReadIntIndirect :: StackSlot -> [Text]
-ozReadIntIndirect pointer = mconcat
-    [ ozLoad (Register 1) pointer
-    , [ "call_builtin read_int" ]
-    , ozStoreIndirect (Register 1) (Register 0) ]
-
-ozReadBool :: StackSlot -> [Text]
-ozReadBool slot = [ "call_builtin read_bool" ] <> ozStore slot (Register 0)
-
-ozReadBoolIndirect :: StackSlot -> [Text]
-ozReadBoolIndirect pointer = mconcat
-    [ ozLoad (Register 1) pointer
-    , [ "call_builtin read_bool" ]
-    , ozStoreIndirect (Register 1) (Register 0) ]
+ozReadBool :: [Text]
+ozReadBool = [ "call_builtin read_bool" ]
 
 ozBranchOnTrue :: Register -> Text -> [Text]
 ozBranchOnTrue register label = ["branch_on_true" <> tshow register <> label]  

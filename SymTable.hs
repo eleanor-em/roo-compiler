@@ -13,8 +13,6 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 import Common
 import RooAst
 
--- | 
-
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
     deriving Eq
@@ -57,6 +55,9 @@ data LocalTable = LocalTable
     { localParams :: [ProcSymbol]
     , localSymbols :: Map Text ProcSymbol }
 
+localStackSize :: LocalTable -> Int
+localStackSize (LocalTable _ syms) = foldr (\x acc -> sizeof (rawSymType x) + acc) 0 syms
+
 instance Show LocalTable where
     show (LocalTable params syms) = concat
         [ "params: { "
@@ -82,6 +83,10 @@ instance Show RootTable where
         , show $ Map.toList $ rootProcs syms
         , "]" ]
 
+data RecordSymbolState = RecordSymbolState
+    { rsOffset :: Int
+    , rsTable :: Map Text Field }
+
 lookupProc :: RootTable -> Text -> Maybe (SourcePos, LocalTable)
 lookupProc symbols procName = Map.lookup procName (rootProcs symbols)
 
@@ -95,7 +100,9 @@ data ProcSymbolState = ProcSymbolState
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
 getAllSymbols (Program records arrays procs) = do
     let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
-    let (errs', aliases) = execEither (mapM_ symbolsArray arrays) records'
+    let symbols = RootTable records' Map.empty
+
+    let (errs', aliases) = execEither (mapM_ (symbolsArray symbols) arrays) records'
     let symbols = RootTable aliases Map.empty
 
     let (errs'', procs') = execEither (mapM_ (symbolsProc symbols) procs) Map.empty    
@@ -104,26 +111,18 @@ getAllSymbols (Program records arrays procs) = do
     (errs <> errs' <> errs'', symbols)
 
 -- | Looks up a possibly-aliased type and ensures it is well-formed.
-getAliasedType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
-getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
-getAliasedType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
-getAliasedType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
+lookupType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
+lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
+lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
+lookupType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
         Just (_, ty) -> Right (pos, liftAlias ty)
         Nothing      -> liftOne $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
 
--- | Ensures the given type is primitive.
-getPrimitiveType :: LocatedTypeName -> Either [AnalysisError] Type
-getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawBoolType)) = Right TBool
-getPrimitiveType (LocatedTypeName _ (PrimitiveTypeName RawIntType)) = Right TInt
-getPrimitiveType (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
-    liftOne $ errorPos pos $
-        "expecting primitive type, found `" <> name <> "`"
-
 -- | Analyse a single array type declaration and extract any symbols.
-symbolsArray :: ArrayType -> EitherState AliasTable ()
-symbolsArray (ArrayType size ty (Ident pos name)) = do
+symbolsArray :: RootTable -> ArrayType -> EitherState AliasTable ()
+symbolsArray rootSyms (ArrayType size ty (Ident pos name)) = do
     table <- getEither
 
     addErrorsOr (checkExisting table) (\val -> putEither $ Map.insert name val table)
@@ -134,7 +133,7 @@ symbolsArray (ArrayType size ty (Ident pos name)) = do
                 errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
                               otherPos "first declared here:"
             Nothing -> do
-                ty' <- getPrimitiveType ty
+                (_, ty') <- lookupType rootSyms ty
                 Right (pos, AliasArray size ty')
 
 -----------------------------------
@@ -146,29 +145,29 @@ symbolsRecord :: Record -> EitherState AliasTable ()
 symbolsRecord (Record fieldDecls (Ident pos name)) = do 
     table <- getEither  
 
-    -- | Check that the field names are unique and  
-    -- | TODO: fix this section 
-    let (errs, fieldDecls') = execEither (mapM_ checkFieldDecl fieldDecls) Map.empty 
+    let (errs, final) = execEither (mapM_ checkFieldDecl fieldDecls) (RecordSymbolState 0 Map.empty)
     addErrors errs 
 
     case Map.lookup name table of
         Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
                               otherPos "first declared here:"
-        Nothing -> putEither $ Map.insert name (pos, AliasRecord fieldDecls') table
+        Nothing -> putEither $ Map.insert name (pos, AliasRecord (rsTable final)) table
 
 -- | Check field declaration is correct, update our fieldDecls table and return any errors 
-checkFieldDecl :: FieldDecl -> EitherState (Map Text (SourcePos, Type)) ()
+checkFieldDecl :: FieldDecl -> EitherState RecordSymbolState ()
 checkFieldDecl (FieldDecl ty (Ident pos name)) = do 
-    fieldDecls <- getEither
-    addErrorsOr (checkExisting fieldDecls) (\val -> putEither $ Map.insert name val fieldDecls)
-
-    where 
-        checkExisting fieldDecls = case Map.lookup name fieldDecls of 
-            Just (otherPos, _) -> Left $
-                errorWithNote pos      ("redeclaration of field name `" <> name <> "`")
-                              otherPos "first declared here:"
-            Nothing -> Right (pos, liftPrimitive ty)
+    current <- getEither
+    let offset = rsOffset current
+    let table  = rsTable  current
+    
+    case Map.lookup name table of 
+        Just (Field otherPos _ _) -> addErrors $
+            errorWithNote pos      ("redeclaration of field name `" <> name <> "`")
+                          otherPos "first declared here:"
+        Nothing -> putEither $ current
+            { rsOffset = offset + sizeof (liftPrimitive ty)
+            , rsTable = Map.insert name (Field pos (StackSlot offset) (liftPrimitive ty)) table }
 
 -----------------------------------
 -- Procedures
@@ -204,7 +203,7 @@ procCheckExisting symbols ty (Ident pos name) current
                 errorWithNote pos      ("redeclaration of local variable `" <> name <> "`")
                               otherPos "first declared here:"
         Nothing -> do
-            (_, ty') <- getAliasedType symbols ty
+            (_, ty') <- lookupType symbols ty
             Right ty'
 
 -- | Analyse a single formal parameter declaration and extract any symbols.
@@ -228,7 +227,7 @@ symbolsParam symbols param = do
     where
         (cons, ty, pos, name) = case param of
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
-            ValParam ty  (Ident pos name) -> (ValSymbol, ty, pos, name)
+            ValParam  ty (Ident pos name) -> (ValSymbol, ty, pos, name)
             -- TODO: array/record types can't be value params -> should give error
 
 -- | Analyse a single local variable declaration and extract any symbols.

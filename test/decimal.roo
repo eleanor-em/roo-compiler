@@ -1,3 +1,6 @@
+# Big-int arithmetic in Roo
+# by Eleanor McMurtry
+
 array[20] integer bigint_t;
 array[10] boolean other;
 
@@ -74,6 +77,7 @@ procedure add (bigint_t a, bigint_t b, bigint_t c)
 procedure compl(bigint_t x, bigint_t c)
     integer i;
     bigint_t one;
+    bigint_t c';
 {
     one[0] <- 1;
 
@@ -82,13 +86,16 @@ procedure compl(bigint_t x, bigint_t c)
         i <- i + 1;
     od
 
-    call add(one, c, c);
+    call copy(c, c');
+    call add(one, c', c);
 }
 
 procedure sub(bigint_t a, bigint_t b, bigint_t c)
+    bigint_t c';
 {
     call compl(b, c);
-    call add(a, c, c);
+    call copy(c, c');
+    call add(a, c', c);
 }
 
 procedure shl(bigint_t x, integer val n, bigint_t result)
@@ -146,6 +153,15 @@ procedure from_int(integer val x, bigint_t result)
     od
 }
 
+procedure copy(bigint_t x, bigint_t x')
+    integer i;
+{
+    while i < 20 do
+        x'[i] <- x[i];
+        i <- i + 1;
+    od
+}
+
 procedure to_int(bigint_t x, integer result)
     integer i;
     integer temp;
@@ -156,9 +172,9 @@ procedure to_int(bigint_t x, integer result)
 
     call is_neg(x, flag);
     if flag then
-        call comp(x, x');
+        call compl(x, x');
     else
-        x' <- x;
+        call copy(x, x');
     fi
 
     while i < 20 do
@@ -172,7 +188,72 @@ procedure to_int(bigint_t x, integer result)
     fi
 }
 
-procedure main()
+procedure mul (bigint_t a, bigint_t b, bigint_t result)
+    boolean neg;
+    integer carry;
+    boolean flag;
+    bigint_t x;
+    integer i, j;
+    integer aa, bb;
+    bigint_t c;
+    integer temp;
+    bigint_t temp_b;
+    bigint_t x';
 {
-    writeln "hello world";
+    call is_neg(a, flag);
+    if flag then
+        call compl(a, a);
+        neg <- not neg;
+    fi
+
+    call is_neg(b, flag);
+    if flag then
+        call copy(b, temp_b);
+        call compl(temp_b, b);
+        neg <- not neg;
+    fi
+
+    carry <- 0;
+    call from_int(0, x);
+
+    while i < 20 do
+        bb <- b[i];
+        j <- 0;
+        while j < 20 do
+            aa <- a[j];
+            temp <- aa * bb + carry;
+            call mod(temp, 10, c[j]);
+            carry <- temp / 10;
+            j <- j + 1;
+        od
+        call shl(c, i, temp_b);
+        call copy(x, x');
+        call add(x', temp_b, x);
+        i <- i + 1;
+    od
+
+    if neg then
+        call copy(x, x');
+        call compl(x', x);
+    fi
+}
+
+procedure print(bigint_t x)
+    integer i;
+{
+    i <- 19;
+    while i >= 0 do
+        write x[i];
+        i <- i - 1;
+    od
+    writeln "";
+}
+
+procedure main()
+    bigint_t a, b, c;
+{
+    call from_int(28375632, a);
+    call from_int(38256263, b);
+    call mul(a, b, c);
+    call print(c);
 }
