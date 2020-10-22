@@ -233,32 +233,45 @@ compileStatement locals (SCall (Ident pos procName) args) = do
 -- dealing with if statements  
 -- compileStatement locals (SIf expr statements) = do 
 --     current <- getEither
-    -- let symbols = rootAliases (blockSyms current)
-    -- TypedExpr ty expr' <- analyseExpression symbols locals expr
+--     let symbols = rootAliases (blockSyms current)
+--     thenLabel <- getLabel 
+--     fiLabel <- getLabel 
+
+--     let result = do 
+--         TypedExpr ty expr' <- analyseExpression symbols locals expr
     
-    -- -- condition expression is incorrectly typed 
-    -- if ty /= TBool then 
-    --     let err  = "expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`" 
-    --         note = "expression found here:" in
-    --     Left $ errorWithNote (locate expr) err (locate expr) note 
-    -- else do 
-    --     -- get the register where true/false is stored + the current state after compilation
-    --     (register, postEval) <- runEither (compileExpr expr') current
-    --     return ()
-    --     -- get label for `then` section and then label for `fi` section 
-        -- TODO: we should increment after each time we get so that current is always current available
-        -- addInstrs (ozBranchOnFalse register label_next)
+--         -- condition expression is incorrectly typed 
+--         if ty /= TBool then 
+--             let err  = "expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`" 
+--                 note = "expression found here:" in
+--             Left $ errorWithNote (locate expr) err (locate expr) note 
+--         else do 
+            
+--             -- get the register where true/false is stored + the current state after compilation
+--             (register, final) <- runEither (compileExpr locals expr') current
+
+--             return $ blockInstrs final <> ozBranchOnFalse register fiLabel <> [thenLabel] 
+            
         -- addInstrs [label_current]
         -- otherwise do a mapping of compileStatement over [statement]
         -- addInstrs [label_next] 
         -- then return any errors if found or the compiled stuff 
-
-
-    -- body must be well type statements 
+    
+    -- case result of
+    --     Left errs -> do
+    --         addErrors errs
+    --         return []
+    --     Right val -> return val
     
 
 compileStatement _ _ = error "compileStatement: not yet implemented"
 
+getLabel :: EitherState BlockState Text 
+getLabel = do 
+    current <- getEither 
+    let currentLabel = nextLabel current 
+    putEither (current { nextLabel = currentLabel + 1})
+    return $ "label_" <> (tshow currentLabel) 
 
 useRegister :: EitherState BlockState Register
 useRegister = do
