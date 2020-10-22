@@ -107,7 +107,11 @@ commentStatement SIfElse {} = error "commentStatement: cannot handle `if...else`
 commentStatement st = addInstrs $ addComment $ prettyStatement 0 st
 
 -- | Allows us to correctly comment `write` and `writeln` statements
+--   Special case to handle string literals.
 compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
+compileWrite _ (LocatedExpr _ (EConst (LitString str)))
+    = addInstrs (ozWriteString str)
+
 compileWrite locals expr = do    
     current <- getEither
     let symbols = rootAliases (blockSyms current)
@@ -121,12 +125,6 @@ compileWrite locals expr = do
             in op ty <?> register
 
 compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
--- | write str;
---   Special case to handle string literals.
-compileStatement _ st@(SWrite (LocatedExpr _ (EConst (LitString str)))) = do
-    commentStatement st
-    addInstrs (ozWriteString str)
-
 -- | write expr;
 compileStatement locals st@(SWrite expr) = do
     commentStatement st
