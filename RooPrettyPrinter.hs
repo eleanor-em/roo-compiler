@@ -9,7 +9,7 @@ and returns a string representing the pretty printed version of the source code.
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module RooPrettyPrinter (prettyPrint, prettyBinOp, prettyStatement) where 
+module RooPrettyPrinter (prettyPrint, prettyBinOp, prettyStatement, prettyExpr) where 
 
 import Common
 
