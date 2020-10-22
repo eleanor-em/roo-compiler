@@ -36,6 +36,10 @@ data ProcSymbol = ProcSymbol
 rawSymType :: ProcSymbol -> Type
 rawSymType = procSymType . symType
 
+isValSymbol :: ProcSymbol -> Bool
+isValSymbol (ProcSymbol (ValSymbol _) _ _ _) = True
+isValSymbol _ = False
+
 instance Show ProcSymbol where
     show sym = concat
         [ show $ symType sym
@@ -56,7 +60,10 @@ data LocalTable = LocalTable
     , localSymbols :: Map Text ProcSymbol }
 
 localStackSize :: LocalTable -> Int
-localStackSize (LocalTable _ syms) = foldr (\x acc -> sizeof (rawSymType x) + acc) 0 syms
+localStackSize (LocalTable _ syms) = foldr (\x acc -> actualSize x + acc) 0 syms
+    where
+        actualSize (ProcSymbol (ValSymbol ty) _ _ _) = sizeof ty
+        actualSize _ = 1
 
 instance Show LocalTable where
     show (LocalTable params syms) = concat

@@ -108,6 +108,7 @@ getAst progNames =
                     exitFailure
 
 data ConsoleCol = White | Green | Blue | Red | Reset
+
 addCol :: ConsoleCol -> Text
 addCol White = "\x1b[1;37m"
 addCol Green = "\x1b[1;32m"
@@ -143,7 +144,7 @@ main = do
                         when (line > 0) $ T.hPutStrLn stderr $ mconcat
                             [ pack $ raw !! (line - 1) <> "\n"
                             , pack $ take (col - 1) $ cycle " "
-                            , addCol Green <> "^" ]
+                            , addCol Green <> "^" <> addCol Reset]
 
                     labelError (AnalysisError line col err)
                         = label line col err (addCol Red <> "error: " <> addCol Reset)

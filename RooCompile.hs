@@ -60,10 +60,7 @@ compileProgram program@(Program _ _ procs) = do
     if not (hasMain symbols) then
         Left (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"])
     else do
-        -- Compile all the procedures in our program. 
-
-        -- execEither: "run the state, return errors and final state"
-        --  runEither: "run the state, return errors, final state, *and* an extra value"
+        -- Compile all the procedures in our program.
         let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
         let output = addHeader (blockInstrs result)
 
@@ -109,18 +106,9 @@ commentStatement (SWhile _ _) = error "commentStatement: cannot handle `while`"
 commentStatement SIfElse {} = error "commentStatement: cannot handle `if...else`"
 commentStatement st = addInstrs $ addComment $ prettyStatement 0 st
 
-compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
--- | write str;
---   Special case to handle string literals.
-compileStatement _ st@(SWrite (LocatedExpr _ (EConst (LitString str))))
-    = do
-        commentStatement st
-        addInstrs (ozWriteString str)
-
--- | write expr;
-compileStatement locals st@(SWrite expr) = do
-    commentStatement st
-    
+-- | Allows us to correctly comment `write` and `writeln` statements
+compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
+compileWrite locals expr = do    
     current <- getEither
     let symbols = rootAliases (blockSyms current)
 
@@ -132,11 +120,23 @@ compileStatement locals st@(SWrite expr) = do
             op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`"
             in op ty <?> register
 
+compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
+-- | write str;
+--   Special case to handle string literals.
+compileStatement _ st@(SWrite (LocatedExpr _ (EConst (LitString str)))) = do
+    commentStatement st
+    addInstrs (ozWriteString str)
+
+-- | write expr;
+compileStatement locals st@(SWrite expr) = do
+    commentStatement st
+    compileWrite locals expr
+
 -- | writeln expr;
 compileStatement locals st@(SWriteLn expr) = do
     commentStatement st
 
-    compileStatement locals (SWrite expr)
+    compileWrite locals expr
     addInstrs (ozWriteString "\\n")
 
 -- | lvalue <- expr;
@@ -280,7 +280,7 @@ compileExpr locals (EUnOp op expr) = do
         Just eval -> do
             addInstrs (ozOp result eval)
             return $ Just result
-        _ -> return Nothing        
+        _ -> return Nothing
 
     where
         ozOp = case op of
