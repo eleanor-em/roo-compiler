@@ -1,6 +1,6 @@
 procedure mod (integer val x, integer val n, integer result)
 {
-    result <- n - x / n * n;
+    result <- x - x / n * n;
     if result = n then
         result <- 0;
     fi

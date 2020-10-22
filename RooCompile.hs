@@ -88,9 +88,13 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
             let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
                                                         (map Register [0..])
 
+            let paramCount = length $ localParams locals
+            let localPrologue = ozIntConst (Register 0) 0
+                             <> concatMap (`ozStore` Register 0) (map StackSlot [paramCount..stackSize - 1])
+
             addInstrsRaw $ ["\n" <> makeProcLabel procName <> ":"]
                         <> addComment "prologue"
-            addInstrs (prologue <> argPrologue)
+            addInstrs (prologue <> argPrologue <> localPrologue)
 
             -- TODO: initialise locals to 0
             
@@ -535,8 +539,8 @@ storeSymbol locals (TypedValLvalue _ location offset _ _) register =
 storeSymbol locals (TypedRefLvalue _ location offset _ _) register =
     if noOffset == offset then do
         ptr <- useRegister
-        addInstrs $ ozLoad         ptr location
-                <> ozStoreIndirect ptr register
+        addInstrs $ ozLoad          ptr location
+                 <> ozStoreIndirect ptr register
     else do
         baseReg <- useRegister
         offsetReg <- compileExpr locals offset

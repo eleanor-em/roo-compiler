@@ -19,7 +19,7 @@ procedure isqrt_rec (integer val x, integer val n, integer result)
     if next_x = x or next_x = x + 1 then
         result <- next_x;
     else
-        call isqrt_rec(x, n, result);
+        call isqrt_rec(next_x, n, result);
     fi
 }
 
@@ -32,7 +32,7 @@ procedure isqrt (integer val n, integer result)
 # Calculate x mod n
 procedure mod (integer val x, integer val n, integer result)
 {
-    result <- n - x / n * n;
+    result <- x - x / n * n;
     if result = n then
         result <- 0;
     fi
@@ -49,9 +49,9 @@ procedure random (integer seed)
 {
     # This is NOT cryptographically secure, and isn't claimed to be.
 
-    a <- 238351756174618923482356278561874612472147182491;
-    b <- 392596713628147537281593756182947315662938501293;
-    m <- 917237151741571310235105198610957321591035610532;
+    a <- 233;
+    b <- 395;
+    m <- 913;
     
     seed <- a * seed + b;
     call mod(seed, m, seed);
@@ -63,16 +63,15 @@ procedure is_prime (integer val n, boolean result)
     integer sqrt_n;
     integer mod_result;
 {
-    x <- 2;
-    call mod(x, 2, mod_result);
-    if mod_result = 0 then
+    if n / 2 * 2 = n then
         result <- false;
     else
         x <- 3;
         result <- true;
+        call isqrt(n, sqrt_n);
         while result and x <= sqrt_n + 1 do
             if n / x * x = n then
-                found_witness <- false;
+                result <- false;
             fi
             x <- x + 2;
         od
@@ -84,7 +83,7 @@ procedure random_prime (integer seed, integer prime)
     integer m;
     boolean prime_result;
 {
-    m <- 917237151741571310235105198610957321591035610532;
+    m <- 917;
     prime_result <- false;
 
     while prime_result = false do
@@ -108,6 +107,10 @@ procedure ext_gcd (integer val a, integer val b, integer result, integer a_inver
 {
     old_r <- a;
     r <- b;
+
+    old_s <- 1;
+
+    t <- 1;
 
     while r > 0 do
         q <- old_r / r;
@@ -136,6 +139,7 @@ procedure random_coprime (integer seed, integer result, integer inverse, integer
 {
     done <- false;
     while not done do
+        call random(seed);
         call ext_gcd(seed, n, gcd, inverse);
         result <- seed;
         if gcd = 1 then
@@ -166,6 +170,7 @@ procedure mod_pow (integer val x, integer val m, integer val pow, integer result
 
     while pow' > 0 do
         call mod(pow', 2, mod_result);
+        writeln "2";
         if mod_result = 1 then
             call mod(result * base, m, result);
         fi
@@ -231,6 +236,8 @@ procedure main ()
         else
             write "Enter privkey modulus: ";
             read sk.modulus;
+            write "Enter privkey exponent: ";
+            read sk.exponent;
             write "Enter privkey p: ";
             read sk.p;
             write "Enter privkey q: ";
