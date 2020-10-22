@@ -1,0 +1,41 @@
+# Greatest common divisor of two positive integers
+# using a variant of Euclid's method
+
+procedure main()
+integer x, y, temp;
+integer quotient;
+integer remainder;
+
+{   write "Input two positive integers: ";
+
+    read x;
+    read y;
+
+    write "\n";
+
+    if x < y then
+        temp <- x;
+        x <- y;
+        y <- temp;
+    fi
+
+    write "The gcd of ";
+    write x;
+    write " and ";
+    write y;
+    write " is ";
+
+    quotient <- x / y;
+    remainder <- x - quotient * y;
+
+    while remainder > 0 do 
+        x <- y;
+        y <- remainder;
+        quotient <- x / y;
+        remainder <- x - quotient * y;
+    od
+
+    write y;
+    write "\n";
+}
+

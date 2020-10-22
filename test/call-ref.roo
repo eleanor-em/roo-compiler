@@ -1,0 +1,18 @@
+procedure foo (integer x)
+{
+    x <- x * 2;
+    call bar(x);
+}
+
+procedure bar (integer x)
+{
+    x <- x * 2;
+}
+
+procedure main ()
+    integer x;
+{
+    x <- 2;
+    call foo(x);
+    writeln x;
+}

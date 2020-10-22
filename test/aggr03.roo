@@ -1,0 +1,44 @@
+# Arrays and records in procedure calls
+
+record { integer x
+       ; integer y
+       ; boolean z
+       } r;
+array [2] r r2;
+
+procedure main ()
+    boolean b;
+    r record1;
+    r2 d;
+{
+    b <- false;
+    call proc(b, record1, d);
+    if b then 
+        writeln record1.x + record1.y;
+    else
+        writeln "Something is wrong";
+    fi
+    if d[0].z then
+        writeln "Something is wrong";
+    else
+        writeln d[0].x + d[0].y;
+    fi
+    if d[1].z then
+        writeln d[1].x + d[1].y;
+    else
+        writeln "Something is wrong";
+    fi
+}
+
+procedure proc(boolean check, r q, r2 qarr)
+{
+    q.x <- 3;
+    q.y <- 7;
+    q.z <- check;
+    check <- true;
+    qarr[0] <- q;
+    qarr[1].x <- 100;
+    qarr[1].y <- 300;
+    qarr[1].z <- true;
+}
+    

@@ -1,0 +1,25 @@
+array[3] integer integer_3_array;
+
+procedure main()
+integer i, result; 
+integer_3_array a, b;
+
+{
+    # Give a and b some values
+    a[0] <- 5;
+    a[1] <- 7;
+    a[2] <- 9;
+    b[0] <- 6;
+    b[1] <- 8;
+    b[2] <- 10;
+
+    # Multiply a and b
+    while i < 3 do
+      result <- result + a[i] * b[i];
+      i <- i+1;
+    od
+    
+    # Write the result out
+    writeln result;
+}
+

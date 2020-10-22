@@ -1,0 +1,9 @@
+array [2] integer int__array__2;
+
+procedure main ()
+    int__array__2 a;
+{
+    a[1] <- 42;
+    a[0] <- a[1];
+    writeln a[0];
+}

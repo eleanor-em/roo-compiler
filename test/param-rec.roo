@@ -1,0 +1,19 @@
+record {
+    integer x;
+    integer y
+} point_t;
+
+procedure lengthSquared (point_t p)
+{
+    writeln p.x * p.x + p.y * p.y;
+}
+
+procedure main ()
+    point_t p;
+{
+    p.x <- 1;
+    p.y <- 2;
+
+    writeln p.x * p.x + p.y * p.y;
+    call lengthSquared(p);
+}

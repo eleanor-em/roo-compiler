@@ -1,0 +1,50 @@
+record { integer a; boolean b } record_t;
+
+array[10] integer array_t;
+array[2]  record_t nested_t;
+
+procedure foo (array_t a)
+{
+    writeln a[0];
+    writeln a[1];
+    writeln a[2];
+    writeln a[3];
+    writeln a[4];
+    writeln a[5];
+    writeln a[6];
+    writeln a[7];
+    writeln a[8];
+    writeln a[9];
+}
+
+procedure bar (nested_t b)
+{
+    writeln b[0].a;
+    writeln b[0].b;
+    writeln b[1].a;
+    writeln b[1].b;
+}
+
+procedure main ()
+    array_t a;
+    nested_t b;
+{
+    a[0] <- 1;
+    a[1] <- 2;
+    a[2] <- 2;
+    a[3] <- 2;
+    a[4] <- 2;
+    a[5] <- 2;
+    a[6] <- 2;
+    a[7] <- 2;
+    a[8] <- 2;
+    a[9] <- 2;
+
+    call foo(a);
+
+    b[0].a <- 3;
+    b[0].b <- false;
+    b[1].a <- 4;
+    b[1].b <- true;
+    call bar(b);
+}

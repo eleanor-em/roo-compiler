@@ -26,20 +26,28 @@ procedure main ()
     writeln "2 is prime!";
     n <- 5;
     while true do
-        x <- 3;
-        found_witness <- false;
-        call isqrt(n, sqrt_n);
+        if n / 2 * 2 != n then
+            x <- 3;
+            
+            found_witness <- false;
+            call isqrt(n, sqrt_n);
 
-        while not found_witness and x <= sqrt_n + 1 do
-            if n / x * x = n then
-                found_witness <- true;
+            write "checking ";
+            write x;
+            write " to ";
+            writeln sqrt_n + 1;
+
+            while not found_witness and x <= sqrt_n + 1 do
+                if n / x * x = n then
+                    found_witness <- true;
+                fi
+                x <- x + 2;
+            od
+
+            if not found_witness then
+                write n;
+                writeln " is prime!";
             fi
-            x <- x + 2;
-        od
-
-        if not found_witness then
-            write n;
-            writeln " is prime!";
         fi
     
         n <- n + 1;

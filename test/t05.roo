@@ -1,0 +1,9 @@
+procedure main ()
+integer k;
+{ k <- 41;
+  call incr(k);
+  writeln k;
+}
+
+procedure incr (integer n)
+{ n <- n + 1; }

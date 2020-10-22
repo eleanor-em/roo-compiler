@@ -1,0 +1,16 @@
+procedure main()
+    integer x;
+    integer A_38;
+    boolean mood;
+{
+    write "Give us a number, please: ";
+    read x;
+    write "And another: ";
+    read A_38;
+    write "Happy and you know it (true/false): ";
+    read mood;
+    write mood;
+    write "\nYour first number was ";
+    write x;
+    write "\n";
+}

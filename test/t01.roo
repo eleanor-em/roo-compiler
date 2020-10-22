@@ -1,0 +1,10 @@
+procedure main ()
+integer a, count;
+{
+    count <- 0;
+    read a;
+    while a > 0 do
+        count <- count + 1;
+        read a;
+    od
+}

@@ -1,0 +1,6 @@
+procedure main ()
+    integer a;
+{
+    writeln "Hello world!";
+    writeln a;
+}

@@ -1,0 +1,38 @@
+# Arrays in procedure calls
+
+array [3] boolean b3;
+array [24] integer i24;
+
+procedure main ()
+    integer n, result;
+    b3 b;
+    i24 d;
+{
+    n <- 23;
+    call proc(false, n, b, d);
+    writeln b[0] and b[1] and b[2];
+    result <- 0;
+    while n >= 0 do
+        result <- result + d[n];
+        n <- n - 1;
+    od
+    writeln result;
+}
+
+procedure proc(boolean val check, integer n, b3 b_arr, i24 i_arr)
+    integer i;
+{
+    i <- n;
+    while i >= 0 do
+        i_arr[i] <- n - i;
+        i <- i - 1;
+    od
+    
+    if check then
+        i_arr[n] <- 99999;
+    fi
+
+    b_arr[0] <- true;
+    b_arr[1] <- true;
+    b_arr[2] <- true;
+}
