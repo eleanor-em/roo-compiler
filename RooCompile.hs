@@ -264,7 +264,9 @@ compileStatement locals st@(SCall (Ident pos procName) args) = do
             return $ blockInstrs final <>
                     map addIndent (moves <> ozCall (makeProcLabel procName))
 
-compileStatement _ _ = error "compileStatement: not yet implemented"
+compileStatement _ (SIf _ _) = error "compileStatement: `if`: not yet implemented"
+compileStatement _ (SWhile _ _) = error "compileStatement: `while`: not yet implemented"
+compileStatement _ (SIfElse _ _ _) = error "compileStatement: `if`..`else`: not yet implemented"
 
 compileExpr :: LocalTable -> Expression -> EitherState BlockState (Maybe Register)
 compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue
