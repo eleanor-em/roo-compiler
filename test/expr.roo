@@ -3,5 +3,9 @@ array[10] integer array_t;
 procedure main()
     array_t x;
 {
-    write x[true];
+    write x[2];
+    if 2 < 3 then 
+        write 2 < 3; 
+    fi
+    write "woo";
 }
