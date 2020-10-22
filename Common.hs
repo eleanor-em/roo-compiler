@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings, GeneralizedNewtypeDeriving #-}
 
 module Common where
 

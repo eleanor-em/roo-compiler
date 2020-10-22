@@ -11,6 +11,11 @@ procedure foo (integer val x, integer val y)
     writeln x * y;
 }
 
+procedure bar(array_t foo)
+{
+    writeln foo[0];
+}
+
 procedure main ()
     integer a;
     test_t foo;
@@ -30,8 +35,7 @@ procedure main ()
     writeln foo.a;
     writeln foo.b;
 
-    read foo.a;
-    writeln foo.a;
-
     call foo(1 + 3 / 4, 5 - 2 * 3);
+    
+    call bar(arr);
 }

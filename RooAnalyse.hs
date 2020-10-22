@@ -162,7 +162,6 @@ symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
 noOffset :: Expression
 noOffset = EConst (LitInt 0)
 
--- TODO: handle non-static offsets i.e. arrays
 analyseLvalue :: AliasTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
 analyseLvalue _ locals (LId (Ident pos name)) = do
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
@@ -199,12 +198,18 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
                                  (Left $ errorWithNote
                                     fldPos ("in statement: unknown field `" <> recName <> "`")
                                     (symPos recSym) "record declared here:")
-            let location = symLocation recSym + fieldOffset fieldSym
+            -- If the record is of value kind, we can compute the offset statically.
+            -- Otherwise, we must compute it dynamically.
+            let (location, offset) = if isValSymbol recSym then
+                    (symLocation recSym + fieldOffset fieldSym, noOffset)
+                else
+                    (symLocation recSym, (EConst . LitInt . stackSlotToInt . fieldOffset) fieldSym)
+
             cons <- case symType recSym of
                 RefSymbol _ -> return TypedRefLvalue
                 ValSymbol _ -> return TypedValLvalue
 
-            return $ cons (fieldTy fieldSym) location noOffset (recName <> "." <> fldName) fldPos
+            return $ cons (fieldTy fieldSym) location offset (recName <> "." <> fldName) fldPos
 
         _ -> liftOne $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
 
