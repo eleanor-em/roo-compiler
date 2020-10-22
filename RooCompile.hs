@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | TODO: Restructure BlockState such that it includes the label increment -> every time we normally re initialise the register values
+-- we now reset ther egister value to 0. so we do a put or something for the state monad 
+
 module RooCompile where
 
 import qualified Data.Map.Strict as Map
@@ -11,178 +14,251 @@ import Common
 
 import RooAnalyse
 import RooAst
-import RooPrettyPrinter
+-- import RooPrettyPrinter
 import SymTable
 import Oz
 import Control.Monad (unless)
 
+-- | effectively now the global state 
+data BlockState = BlockState
+    { blockSyms :: RootTable
+    , blockInstrs :: [Text]
+    , blockNextReg :: Int 
+    , nextLabel :: Int}
+
+initialBlockState :: RootTable -> BlockState
+initialBlockState symbols = BlockState symbols [] 0 0
+
+resetBlockRegs :: EitherState BlockState ()
+resetBlockRegs = do
+    current <- getEither
+    putEither (current { blockNextReg = 0 })
+
 compileProgram :: Program -> Either [AnalysisError] [Text]
 compileProgram program@(Program _ _ procs) = do
     let (errs, symbols) = getAllSymbols program
+
     if not (hasMain symbols) then
-        Left [AnalysisError 0 0 "main procedure with no parameters missing"]
+        Left (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"])
     else do
-        result <- addHeader <$> leftmap (errs <>) (concatEither $ map (compileProc symbols) procs)
-        if null errs then
-            return $ separate result
+        -- Compile all the procedures in our program. 
+
+        -- execEither: "run the state, return errors and final state"
+        --  runEither: "run the state, return errors, final state, *and* an extra value"
+        let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
+        let output = addHeader (blockInstrs result)
+
+        let allErrs = errs <> errs'
+
+        if null allErrs then
+            Right (separate output)
         else
-            Left errs
+            Left allErrs
     where
         separate  = map (<> "\n")
         addHeader = (["call proc_main", "halt"] <>)
 
--- Text processing for prettifying generated Oz code
-addIndent :: Text -> Text
-addIndent "" = ""
-addIndent str
-    | T.head str == '#' = str
-    | otherwise         = "    " <> str
+compileProc :: Procedure -> EitherState BlockState ()
+compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
+    current <- getEither
 
-addComment :: Text -> [Text]
-addComment str = ["# " <> T.strip str]
-
-addCommentTo :: Text -> [Text] -> [Text]
-addCommentTo str = (["# " <> T.strip str] <>)
-
-makeProcLabel :: Text -> Text
-makeProcLabel = ("proc_" <>)
-
-compileProc :: RootTable -> Procedure -> Either [AnalysisError] [Text]
-compileProc symbols (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = 
-    case Map.lookup procName (rootProcs symbols) of
+    case lookupProc (blockSyms current) procName of
         Just (_, locals) -> do
-            let addCommentAndCompile st = addCommentTo (prettyStatement 0 st) <$> compileStatement symbols locals st
-            instrs <- concatEither $ map addCommentAndCompile statements
+            let resetAndCompile st = do
+                resetBlockRegs
+                compileStatement locals st
 
-            let numLocals = Map.size (localSymbols locals)
-            let prologue = if numLocals > 0 then ozPushStackFrame numLocals else []
-            let epilogue = if numLocals > 0 then ozPopStackFrame  numLocals else []
+            case runEither (mapM resetAndCompile statements) current of
+                Right (instrs, _) -> do
+                    -- handle errs and results
+                    let numLocals = Map.size (localSymbols locals)
+                    
+                    let prologue = if numLocals > 0 then ozPushStackFrame numLocals else []
+                    let epilogue = if numLocals > 0 then ozPopStackFrame  numLocals else []
 
-            -- Load arguments
-            let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
-                                                        (map Register [0..])
+                    -- Load arguments
+                    let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
+                                                                (map Register [0..])
 
-            Right $ concat
-                [ ["\n" <> makeProcLabel procName <> ":"]
-                , addComment "prologue"
-                , map addIndent (prologue <> argPrologue <> instrs)
-                , addComment "epilogue"
-                , map addIndent (epilogue <> ["return"]) ]
+                    let allInstrs = concat
+                            [ ["\n" <> makeProcLabel procName <> ":"]
+                            , addComment "prologue"
+                            , map addIndent (prologue <> argPrologue <> concat instrs)
+                            , addComment "epilogue"
+                            , map addIndent (epilogue <> ["return"]) ]
+
+                    putEither (current { blockInstrs = allInstrs })
+
+                Left errs -> addErrors errs
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
-data BlockState = BlockState
-    { blockRootSyms :: RootTable
-    , blockLocalSyms :: LocalTable
-    , blockInstrs :: [Text]
-    , blockNextReg :: Int }
 
-initialBlockState :: RootTable -> LocalTable -> BlockState
-initialBlockState symbols locals = BlockState symbols locals [] 0
-
-compileStatement :: RootTable -> LocalTable -> Statement -> Either [AnalysisError] [Text]
+-- get the symbols from root table 
+compileStatement :: LocalTable -> Statement -> EitherState BlockState [Text]
 -- | write str;
 --   Special case to handle string literals.
-compileStatement _ _ (SWrite (LocatedExpr _ (EConst (LitString str))))
+compileStatement _ (SWrite (LocatedExpr _ (EConst (LitString str))))
     = pure (ozWriteString str)
 
 -- | write expr;
-compileStatement symbols locals (SWrite expr) = do
-    TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals expr
-    (result, final) <- runEither (compileExpr expr) (initialBlockState symbols locals)
+compileStatement locals (SWrite expr) = do
+    current <- getEither
+    let symbols = rootAliases (blockSyms current)
 
-    let op TInt  = ozWriteInt
-        op TBool = ozWriteBool
-        op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`" in 
-        
-        return $ blockInstrs final <> op ty result
+    let result = do
+        TypedExpr ty expr <- analyseExpression symbols locals expr
+        (result, final) <- runEither (compileExpr locals expr) current
+
+        let op TInt  = ozWriteInt
+            op TBool = ozWriteBool
+            op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`" in 
+            
+            return $ blockInstrs final <> op ty result
+
+    case result of
+        Left errs -> do
+            addErrors errs
+            return []
+        Right val -> return val
 
 -- | writeln expr;
-compileStatement symbols locals (SWriteLn expr) = do
-    instrs <- compileStatement symbols locals (SWrite expr)
+compileStatement locals (SWriteLn expr) = do
+    instrs <- compileStatement locals (SWrite expr)
     return $ instrs <> ozWriteString "\\n"
 
 -- | lvalue <- expr;
-compileStatement symbols locals (SAssign lvalue expr) = do
-    TypedExpr ty' expr' <- analyseExpression (rootAliases symbols) locals expr
+compileStatement locals (SAssign lvalue expr) = do
+    current <- getEither
+    let symbols = rootAliases (blockSyms current)
+
+    let result = do
+        TypedExpr ty' expr' <-  analyseExpression symbols locals expr
     
-    sym <- analyseLvalue locals lvalue
-    let ty = rawSymType sym
+        sym <- analyseLvalue locals lvalue
+        let ty = rawSymType sym
+        
+        if ty /= ty' then
+            let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
+                note = "`" <> symName sym <> "` declared here:" in
+            Left $ errorWithNote (locate expr) err (symPos sym) note
+        else do
+            (register, postEval) <- runEither (compileExpr locals expr') current
+            (_, final)           <- runEither (storeSymbol register sym) postEval
+            return $ blockInstrs final
+
+    case result of
+        Left errs -> do
+            addErrors errs
+            return []
+        Right val -> return val
+
+compileStatement locals (SRead lvalue) = do
+    let result = do
+        sym <- analyseLvalue locals lvalue
+
+        -- Handle the different types of symbols appropriately
+        case symType sym of
+            ValSymbol TInt  -> return $ ozReadInt (symLocation sym)
+            ValSymbol TBool -> return $ ozReadBool (symLocation sym)
+
+            RefSymbol TInt  -> return $ ozReadIntIndirect (symLocation sym)
+            RefSymbol TBool -> return $ ozReadBoolIndirect (symLocation sym)
+
+            _ -> let err  = "expecting `integer` or `boolean`, found `" <> tshow (rawSymType sym) <> "`"
+                     note = "`" <> symName sym <> "` declared here:" in
+                Left $ errorWithNote (locateLvalue lvalue) err (symPos sym) note
+
+    case result of
+        Left errs -> do
+            addErrors errs
+            return []
+        Right val -> return val
+            
+
+compileStatement locals (SCall (Ident pos procName) args) = do
+    current <- getEither
+    let symbols = blockSyms current
     
-    if ty /= ty' then
-        let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
-            note = "`" <> symName sym <> "` declared here:" in
-        Left $ errorWithNote (locate expr) err (symPos sym) note
-    else do
-        (register, postEval) <- runEither (compileExpr expr') (initialBlockState symbols locals)
-        (_, final)           <- runEither (storeSymbol register sym) postEval
-        return $ blockInstrs final
+    let result = do
+        (targetPos, targetProc) <- unwrapOr (Map.lookup procName $ rootProcs symbols)
+                                            (liftOne $ errorPos pos $
+                                                "unknown procedure `" <> procName <> "`")
+        let params = localParams targetProc
 
-compileStatement _ locals (SRead lvalue) = do
-    sym <- analyseLvalue locals lvalue
+        -- Check # arguments = # parameters
+        unless  (length args == length params)
+                (let err  = mconcat
+                        [ "`", procName, "` expects ", countWithNoun (length params) "parameter"
+                        , " but was given ", tshow (length args) ]
+                     note = "`" <> procName <> "` declared here:" in
+                        Left $ errorWithNote pos err targetPos note)
 
-    -- Handle the different types of symbols appropriately
-    case symType sym of
-        ValSymbol TInt  -> return $ ozReadInt (symLocation sym)
-        ValSymbol TBool -> return $ ozReadBool (symLocation sym)
+        -- Type-check arguments
+        typedArgs <- concatEither $ map ((pure <$>) . analyseExpression (rootAliases symbols) locals)
+                                        args
 
-        RefSymbol TInt  -> return $ ozReadIntIndirect (symLocation sym)
-        RefSymbol TBool -> return $ ozReadBoolIndirect (symLocation sym)
+        -- Check argument types match parameter types
+        let mismatched = filter (\((_, a), b) -> typeof a /= rawSymType b)
+                                (zip (enumerate typedArgs) params)
 
-        _ -> let err  = "expecting `integer` or `boolean`, found `" <> tshow (rawSymType sym) <> "`"
-                 note = "`" <> symName sym <> "` declared here:" in
-            Left $ errorWithNote (locateLvalue lvalue) err (symPos sym) note
+        let reportErr ((i, expr), symbol) = let err  = mconcat [ "in argument: expecting `"
+                                                    , tshow $ rawSymType symbol
+                                                    , "`, found `"
+                                                    , tshow $ typeof expr
+                                                    , "`" ]
+                                                note = "parameter declared here:"  in
+                Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
 
-compileStatement symbols locals (SCall (Ident pos procName) args) = do
-    (targetPos, targetProc) <- unwrapOr (Map.lookup procName $ rootProcs  symbols)
-                                        (liftOne $ errorPos pos $
-                                            "unknown procedure `" <> procName <> "`")
-    let params = localParams targetProc
+        concatEither $ map reportErr mismatched
 
-    -- Check # arguments = # parameters
-    unless  (length args == length params)
-            (let err  = mconcat
-                    [ "`", procName, "` expects ", countWithNoun (length params) "parameter"
-                    , " but was given ", tshow (length args) ]
-                 note = "`" <> procName <> "` declared here:" in
-                     Left $ errorWithNote pos err targetPos note)
+        -- Compile arguments
+        let compileArgs = mapM (compileExpr locals . innerExp) typedArgs
+        -- Reserve registers for the arguments
+        let current = current { blockNextReg = length args }
 
-    -- Type-check arguments
-    typedArgs <- concatEither $ map ((pure <$>) . analyseExpression (rootAliases symbols) locals)
-                                    args
+        (registers, final) <- runEither compileArgs current
+        -- TODO: load address as necessary
 
-    -- Check argument types match parameter types
-    let mismatched = filter (\((_, a), b) -> typeof a /= rawSymType b)
-                            (zip (enumerate typedArgs) params)
+        let moves = concatMap (uncurry ozMove) (zip (map Register [0..]) registers)
 
-    let reportErr ((i, expr), symbol) = let err  = mconcat [ "in argument: expecting `"
-                                                   , tshow $ rawSymType symbol
-                                                   , "`, found `"
-                                                   , tshow $ typeof expr
-                                                   , "`" ]
-                                            note = "parameter declared here:"  in
-            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+        return $ blockInstrs final <> moves <> ozCall (makeProcLabel procName)
+    
+    case result of
+        Left errs -> do
+            addErrors errs
+            return []
+        Right val -> return val
 
-    concatEither $ map reportErr mismatched
+-- dealing with if statements  
+-- compileStatement locals (SIf expr statements) = do 
+--     current <- getEither
+    -- let symbols = rootAliases (blockSyms current)
+    -- TypedExpr ty expr' <- analyseExpression symbols locals expr
+    
+    -- -- condition expression is incorrectly typed 
+    -- if ty /= TBool then 
+    --     let err  = "expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`" 
+    --         note = "expression found here:" in
+    --     Left $ errorWithNote (locate expr) err (locate expr) note 
+    -- else do 
+    --     -- get the register where true/false is stored + the current state after compilation
+    --     (register, postEval) <- runEither (compileExpr expr') current
+    --     return ()
+    --     -- get label for `then` section and then label for `fi` section 
+        -- TODO: we should increment after each time we get so that current is always current available
+        -- addInstrs (ozBranchOnFalse register label_next)
+        -- addInstrs [label_current]
+        -- otherwise do a mapping of compileStatement over [statement]
+        -- addInstrs [label_next] 
+        -- then return any errors if found or the compiled stuff 
 
-    -- Compile arguments
-    let compileArgs = mapM (compileExpr . innerExp) typedArgs
-    -- Reserve registers for the arguments
-    (registers, final) <- runEither compileArgs $ BlockState symbols locals [] (length args)
-    -- TODO: load address as necessary
 
-    let moves = concatMap (uncurry ozMove) (zip (map Register [0..]) registers)
-
-    return $ blockInstrs final <> moves <> ozCall (makeProcLabel procName)
-
--- --TODO: Handling the if and while statements  
--- compileStatement symbols locals (SIf expr statements) = do 
---     TypedExpr ty expr <- analyseExpression (rootAliases symbols) locals 
---     -- the type of the expression checked must be boolean. 
---     -- body must be well type statements 
+    -- body must be well type statements 
     
 
-compileStatement _ _ _ = error "compileStatement: not yet implemented"
+compileStatement _ _ = error "compileStatement: not yet implemented"
+
 
 useRegister :: EitherState BlockState Register
 useRegister = do
@@ -197,14 +273,14 @@ addInstrs instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
-compileExpr :: Expression -> EitherState BlockState Register
-compileExpr (ELvalue lvalue) = loadLvalue lvalue
+compileExpr :: LocalTable -> Expression -> EitherState BlockState Register
+compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue
 
-compileExpr (EConst lit) = loadConst lit
+compileExpr _ (EConst lit) = loadConst lit
 
-compileExpr (EUnOp op expr) = do
+compileExpr locals (EUnOp op expr) = do
     result <- useRegister
-    eval <- compileExpr (fromLocated expr)
+    eval <- compileExpr locals (fromLocated expr)
     addInstrs (ozOp result eval)
     return result
 
@@ -213,10 +289,10 @@ compileExpr (EUnOp op expr) = do
             UnNot    -> ozNot
             UnNegate -> ozNeg
 
-compileExpr (EBinOp op lexp rexp) = do
+compileExpr locals (EBinOp op lexp rexp) = do
     result <- useRegister
-    lhs <- compileExpr (fromLocated lexp)
-    rhs <- compileExpr (fromLocated rexp)
+    lhs <- compileExpr locals (fromLocated lexp)
+    rhs <- compileExpr locals (fromLocated rexp)
     addInstrs (ozOp result lhs rhs)
     return result
 
@@ -235,14 +311,13 @@ compileExpr (EBinOp op lexp rexp) = do
             BinTimes -> ozTimes
             BinDivide -> ozDivide
 
-loadLvalue :: Lvalue -> EitherState BlockState Register
-loadLvalue (LId (Ident _ name)) = do
-    current <- getEither
-    case Map.lookup name (localSymbols $ blockLocalSyms current) of
+loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState Register
+loadLvalue locals (LId (Ident _ name)) = do
+    case Map.lookup name (localSymbols locals) of
         Just sym -> loadSymbol sym
         Nothing  -> error "internal error: type check failed"
 
-loadLvalue _ = error "loadLvalue: not yet implemented"
+loadLvalue _ _ = error "loadLvalue: not yet implemented"
 
 loadSymbol :: ProcSymbol -> EitherState BlockState Register
 loadSymbol (ProcSymbol (ValSymbol _) location _ _) = do
@@ -270,10 +345,9 @@ loadConst (LitInt val) = do
 
 loadConst _ = error "internal error: tried to load Text constant"
 
-storeLvalue :: Lvalue -> Register -> EitherState BlockState ()
-storeLvalue lvalue register = do
-    current <- getEither
-    addErrorsOr (analyseLvalue (blockLocalSyms current) lvalue) $ \sym ->
+storeLvalue :: LocalTable -> Lvalue -> Register -> EitherState BlockState ()
+storeLvalue locals lvalue register = do
+    addErrorsOr (analyseLvalue locals lvalue) $ \sym ->
         storeSymbol register sym
 
 storeSymbol :: Register -> ProcSymbol -> EitherState BlockState ()
@@ -284,3 +358,19 @@ storeSymbol register (ProcSymbol (RefSymbol _) location _ _) = do
     ptr <- useRegister
     addInstrs $ ozLoad          ptr location
              <> ozStoreIndirect ptr register
+
+-- Text processing for prettifying generated Oz code
+addIndent :: Text -> Text
+addIndent "" = ""
+addIndent str
+    | T.head str == '#' = str
+    | otherwise         = "    " <> str
+
+addComment :: Text -> [Text]
+addComment str = ["# " <> T.strip str]
+
+addCommentTo :: Text -> [Text] -> [Text]
+addCommentTo str = (["# " <> T.strip str] <>)
+
+makeProcLabel :: Text -> Text
+makeProcLabel = ("proc_" <>)

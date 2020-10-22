@@ -82,6 +82,9 @@ instance Show RootTable where
         , show $ Map.toList $ rootProcs syms
         , "]" ]
 
+lookupProc :: RootTable -> Text -> Maybe (SourcePos, LocalTable)
+lookupProc symbols procName = Map.lookup procName (rootProcs symbols)
+
 -- | Procedures additionally need to track the stack location being used and the parameters' types.
 data ProcSymbolState = ProcSymbolState
     { location :: Int

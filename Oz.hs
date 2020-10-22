@@ -93,6 +93,12 @@ ozReadBoolIndirect pointer = mconcat
     , [ "call_builtin read_bool" ]
     , ozStoreIndirect (Register 1) (Register 0) ]
 
+ozBranchOnTrue :: Register -> Text -> [Text]
+ozBranchOnTrue register label = ["branch_on_true" <> tshow register <> label]  
+
+ozBranchOnFalse :: Register -> Text -> [Text]
+ozBranchOnFalse register label = ["branch_on_false" <> tshow register <> label] 
+
 ozBranch :: Text -> [Text]
 ozBranch label = ["branch_uncond " <> label]
 

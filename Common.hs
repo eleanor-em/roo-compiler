@@ -107,6 +107,7 @@ liftOne = leftmap pure
 ifJust :: Maybe a -> (a -> [b]) -> [b]
 ifJust = flip concatMap
 
+-- | concats both left and right, but returns the one that exists 
 concatEither :: [Either [a] [b]] -> Either [a] [b]
 concatEither list
         | null lefts' = Right rights'
@@ -140,10 +141,11 @@ putEither state = do
     (errs, _) <- get
     put (errs, state)
 
--- | `execState` for EitherState.
+-- | `execState` for EitherState. "run the state, return errors and final state"
 execEither :: EitherState s a -> s -> ([AnalysisError], s)
 execEither state initial = execState state ([], initial)
 
+--  runEither: "run the state, return errors, final state, *and* an extra value"
 runEither :: EitherState s a -> s -> Either [AnalysisError] (a, s)
 runEither state initial
     | null errs = Right (val, final)
