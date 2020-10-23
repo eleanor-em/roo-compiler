@@ -30,10 +30,13 @@ instance Show StackSlot where
     show (StackSlot l) = show l
 
 -- | Concatenates a list of pairs of lists.
-concatPair ::[([a], [b])] -> ([a], [b])
+concatPair :: [([a], [b])] -> ([a], [b])
 concatPair = foldr combine ([], [])
     where
         combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
+
+mapPair :: (a -> b) -> (a, a) -> (b, b)
+mapPair f (x, y) = (f x, f y)
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
