@@ -12,6 +12,7 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import Common
 import RooAst
+import Control.Monad (when)
 
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
@@ -235,7 +236,6 @@ symbolsParam symbols param = do
         (cons, ty, pos, name) = case param of
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
             ValParam  ty (Ident pos name) -> (ValSymbol, ty, pos, name)
-            -- TODO: array/record types can't be value params -> should give error
 
 -- | Analyse a single local variable declaration and extract any symbols.
 symbolsDecl :: RootTable -> VarDecl -> EitherState ProcSymbolState ()
