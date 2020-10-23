@@ -34,8 +34,8 @@ import System.IO (hPrint, stderr)
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
     deriving Show
 
--- | Specifying the compiler flag options including the flag, flag arguments if required, and
--- default if erroneous arguments are provided
+-- | Specifying the compiler flag options including the flag, flag arguments
+--   if required, and default if erroneous arguments are provided
 options :: [OptDescr Flag]
 options =
     [ Option ['a'] ["ast"]    (NoArg GenAst)            "generate AST"

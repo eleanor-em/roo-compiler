@@ -1,0 +1,33 @@
+# Compute first 20 hailstone numbers
+
+procedure main ()
+  integer n, result;
+{
+    n <- 1;
+    while n < 21 do 
+        call hail(n, result);
+        write result;
+        write " ";
+        n <- n+1;
+    od
+    write "\n";
+}
+
+procedure hail (integer val in, integer out)
+  integer count;
+{
+    count <- 1;
+    if in=1 then
+        out <- count;
+    else 
+        if (in/2)*2 = in then
+            call hail(in/2, count);
+        else
+            call hail(3*in+1, count);
+        fi
+        out <- count + 1;
+    fi
+}
+
+# The answer should be 1 2 8 3 6 9 17 4 20 7 15 10 10 18 18 5 13 21 21 8
+

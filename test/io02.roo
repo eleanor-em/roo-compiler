@@ -1,0 +1,26 @@
+# Testing simple input-output
+
+procedure main()
+boolean stuff;
+{
+    write "Type a boolean: ";
+    read    something;
+    writeln something;
+    writeln 42;
+    writeln true;
+    writeln (1*2*3) + (4*5*6);
+    writeln (1+2+3) * (4+5+6);
+    write "    ";
+    writeln "indented line";
+}
+
+# Typical (expected) session:
+
+# Type a boolean: false
+# false
+# 42
+# true
+# 126
+# 90
+#     indented line
+

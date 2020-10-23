@@ -1,0 +1,38 @@
+# Arrays and records
+
+record { integer x
+       ; integer y
+       ; boolean z
+       } r;
+array [3] boolean b3;
+array [24] integer i24;
+array [2] r r2;
+
+procedure main ()
+    integer n;
+    r record1;
+    b3 b;
+    r2 d, e;
+{
+    b[1] <- false;
+    b[2] <- b[1];
+    write "Provide an integer: ";
+    read b[0];
+    writeln b[1];
+    writeln b[0];
+    if not b[2] then
+        writeln (b[0] or b[1]);
+    fi
+
+    record1.x <- 42;
+    record1.y <- 0;
+    record1.z <- false;
+
+    d[0].x <- 42;
+    d[0].y <- 0;
+    d[0].y <- d[0].x;
+   
+    d[1] <- d[0];
+    
+    e <- d;
+}

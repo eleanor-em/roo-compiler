@@ -31,7 +31,9 @@ instance Show StackSlot where
 
 -- | Concatenates a list of pairs of lists.
 concatPair ::[([a], [b])] -> ([a], [b])
-concatPair = foldr (\(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)) ([], [])
+concatPair = foldr combine ([], [])
+    where
+        combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
@@ -78,8 +80,8 @@ sizeof TInt = 1
 sizeof (TArray size ty) = size * sizeof ty
 sizeof (TRecord map) = foldr ((+) . sizeof . fieldTy) 0 map
 
--- | Specific types for aliases allow us to check more correctness without as much
---   clumsy conversion.
+-- | Specific types for aliases allow us to check more correctness without as
+--   much clumsy conversion.
 data AliasType = AliasArray Int Type | AliasRecord (Map Text Field)
     deriving Eq
 
@@ -104,8 +106,8 @@ data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
 errorPos :: SourcePos -> Text -> Either AnalysisError a
 errorPos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
 
--- | Creates an AnalysisError from a given SourcePos with a note giving more detail
---   at another SourcePos.
+-- | Creates an AnalysisError from a given SourcePos with a note giving more
+--   detail at another SourcePos.
 errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
 errorWithNote errPos err notePos note =
     [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
@@ -127,7 +129,7 @@ concatEither list
         lefts'  = concat $ lefts list
         rights' = concat $ rights list
 
--- | Wrap the notion of a state that also keeps track of errors, with helper functions.
+-- | A state that also keeps track of errors, with helper functions.
 type EitherState s v = State ([AnalysisError], s) v
 
 -- | Add the list of errors to the current EitherState.
@@ -136,9 +138,8 @@ addErrors errs = do
     (prevErrs, state) <- get
     put (prevErrs <> errs, state)
 
-
--- | Add the list of errors to the current EitherState, or if there are no errors perform
---   an action.
+-- | Add the list of errors to the current EitherState, or if there are no
+--   errors perform an action.
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val

@@ -1,0 +1,9 @@
+procedure main ()
+    integer x;
+{
+    read x;
+
+    if x > 100 then
+        writeln "too large!";
+    fi
+}

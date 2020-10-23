@@ -1,0 +1,10 @@
+procedure f(integer val x)
+{ x <- x + 1; writeln x; }
+
+procedure main ()
+integer n;
+{
+    n <- 41;
+    call f(n);
+    writeln n;
+}

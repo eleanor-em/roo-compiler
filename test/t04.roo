@@ -1,0 +1,13 @@
+array [2] integer int_array_2;
+
+procedure p(integer val x, integer val y)
+int_array_2 a;
+{
+    a[x] <- 42;
+    a[y] <- a[x];
+    writeln a[y];
+}
+
+procedure main ()
+{ call p(1,0); }
+

@@ -1,0 +1,29 @@
+# Calculate x to the power of n
+
+procedure main()
+integer x, n, result;
+{
+    write "Integer x: ";
+    read x;
+    write "Positive integer n: ";
+    read n;
+    call power(x, n, result);
+    write "x^n is: ";
+    writeln result;
+}
+
+procedure power(integer val x, integer val n, integer out)
+integer res;
+{
+    if n = 1 then
+        out <- x;
+    else 
+        call power(x*x, n/2, res);
+        if 2*(n/2) = n then 
+            out <- res;        # n was even
+        else 
+            out <- x * res;    # n was odd
+        fi
+    fi
+}
+

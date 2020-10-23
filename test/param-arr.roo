@@ -1,0 +1,16 @@
+array[2] integer point;
+
+procedure lengthSquared (point p)
+{
+    writeln p[0] * p[0] + p[1] * p[1];
+}
+
+procedure main ()
+    point p;
+{
+    p[0] <- 1;
+    p[1] <- 2;
+
+    writeln p[0] * p[0] + p[1] * p[1];
+    call lengthSquared(p);
+}

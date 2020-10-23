@@ -7,7 +7,7 @@ CC =	 	gcc
 # We need -ffloat-store to help ensure consistent results for 
 # floating point operations on different architectures and with 
 # different optimization levels.
-CFLAGS =	-Wall -ffloat-store -z execstack -fno-stack-protector -g -O0
+CFLAGS =	-Wall -ffloat-store -g -O0
 LINKFLAGS =	-g
 
 oz:		$(OBJ)
