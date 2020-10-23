@@ -541,32 +541,34 @@ storeLvalue locals lvalue register = do
     addErrorsOr (analyseLvalue (rootAliases $ blockSyms current) locals lvalue)
                 (\sym -> storeSymbol locals sym register)
 
+-- TODO: refactor loads as below
 storeSymbol :: LocalTable -> TypedLvalue -> Register -> EitherState BlockState ()
-storeSymbol locals (TypedValLvalue _ location offset _ _) register =
-    if noOffset == offset then
-        addInstrs $ ozStore location register
-    else do
-        baseReg <- useRegister
-        offsetReg <- compileExpr locals offset
-        case offsetReg of
-            Just offsetReg -> addInstrs $ ozLoadAddress baseReg location
-                                       <> ozSubOffset baseReg baseReg offsetReg
-                                       <> ozStoreIndirect baseReg register
-            _ -> return ()
+storeSymbol locals lval register = do
+    let offset = lvalueOffset lval
 
-storeSymbol locals (TypedRefLvalue _ location offset _ _) register =
-    if noOffset == offset then do
-        ptr <- useRegister
-        addInstrs $ ozLoad          ptr location
-                 <> ozStoreIndirect ptr register
+    if noOffset == offset then
+        noOffsetOp
     else do
         baseReg <- useRegister
         offsetReg <- compileExpr locals offset
         case offsetReg of
-            Just offsetReg -> addInstrs $ ozLoad baseReg location
+            Just offsetReg -> addInstrs $ offsetLoad baseReg (lvalueLocation lval)
                                        <> ozSubOffset baseReg baseReg offsetReg
                                        <> ozStoreIndirect baseReg register
             _ -> return ()
+    where
+        noOffsetOp = case lval of
+            TypedValLvalue {} ->
+                addInstrs $ ozStore (lvalueLocation lval) register
+
+            TypedRefLvalue {} -> do
+                ptr <- useRegister
+                addInstrs $ ozLoad ptr (lvalueLocation lval)
+                         <> ozStoreIndirect ptr register
+        
+        offsetLoad = case lval of
+            TypedValLvalue {} -> ozLoadAddress
+            TypedRefLvalue {} -> ozLoad
 
 -- Text processing for prettifying generated Oz code
 addIndent :: Text -> Text

@@ -210,6 +210,14 @@ lvalueType :: TypedLvalue -> Type
 lvalueType (TypedRefLvalue ty _ _ _ _) = ty
 lvalueType (TypedValLvalue ty _ _ _ _) = ty
 
+lvalueLocation :: TypedLvalue -> StackSlot
+lvalueLocation (TypedRefLvalue _ loc _ _ _) = loc
+lvalueLocation (TypedValLvalue _ loc _ _ _) = loc
+
+lvalueOffset :: TypedLvalue -> Expression
+lvalueOffset (TypedRefLvalue _ _ off _ _) = off
+lvalueOffset (TypedValLvalue _ _ off _ _) = off
+
 lvalueName :: TypedLvalue -> Text
 lvalueName (TypedRefLvalue _ _ _ name _) = name
 lvalueName (TypedValLvalue _ _ _ name _) = name
@@ -241,9 +249,15 @@ analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
                 TArray _ ty -> do
                     typecheckArrayIndex symbols locals indexExpr
 
+                    let pos = locate indexExpr
+                    index <- if sizeof ty /= 1 then
+                        return $ EBinOp BinTimes (LocatedExpr pos (EConst (LitInt (sizeof ty)))) indexExpr
+                    else
+                        return $ simplifyExpression (fromLocated indexExpr)
+
                     return $ symToTypedLvalue
-                        (ProcSymbol (cons sym ty)  (symLocation sym) pos ident)
-                        (simplifyExpression (fromLocated indexExpr))
+                        (ProcSymbol (cons sym ty) (symLocation sym) pos (ident <> "[]"))
+                        index
 
                 ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
         Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
@@ -295,7 +309,7 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
 
                             return $ symToTypedLvalue
                                 (ProcSymbol (cons sym innerTy) (symLocation sym) pos (arrName <> "[]" <> fldName))
-                                (EBinOp BinPlus (LocatedExpr pos ((EConst . LitInt .stackSlotToInt) offset))
+                                (EBinOp BinPlus (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
                                                 (LocatedExpr pos index))
                         _ -> Left $ errorPos fldPos $ "in expression: unknown field name `" <> fldName <> "`"
 
