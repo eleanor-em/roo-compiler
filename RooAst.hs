@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {-|
 Module      : RooAST
 Description : Grammar of our Roo AST  
@@ -12,6 +14,7 @@ module RooAst where
 import Data.Text (Text)
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
+import Text.Parsec.Pos (initialPos)
 
 -- | A Roo Program node consists of: 
 -- 
@@ -116,6 +119,9 @@ data Expression
     | EUnOp UnOp LocatedExpr
     deriving (Show, Eq)
 
+liftExpr :: Expression -> LocatedExpr
+liftExpr = LocatedExpr (initialPos "")
+
 -- | An Expression with a source location.
 data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression }
     deriving (Show, Eq)
@@ -163,6 +169,14 @@ locateLvalue (LId (Ident pos _)) = pos
 locateLvalue (LMember (Ident pos _) _) = pos
 locateLvalue (LArray (Ident pos _) _) = pos
 locateLvalue (LArrayMember (Ident pos _) _ _) = pos
+
+-- | Used to determine if lvalues are modified in a while body.
+nameLvalue :: Lvalue -> Text
+nameLvalue (LId (Ident _ name)) = name
+nameLvalue (LMember (Ident _ record) (Ident _ field)) = record <> "." <> field
+-- Don't waste time dynamically checking the array index
+nameLvalue (LArray (Ident _ array) _) = array <> "[]"
+nameLvalue (LArrayMember (Ident _ array) _ (Ident _ field)) = array <> "[]." <> field
 
 -- | Identifier is a non empty sequence of chars (or Text)
 data Ident = Ident SourcePos Text

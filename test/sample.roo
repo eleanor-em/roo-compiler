@@ -7,7 +7,7 @@ procedure main ()
     read x;
     read y;
     write "\n";
-    if x < y
+    if x < y then
     temp
     x <-
     y <-

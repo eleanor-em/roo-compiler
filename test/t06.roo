@@ -7,7 +7,7 @@ a5 a;
     a[1] <- 1;
     a[a[1]] <- 0;
     if
-        a[a[1]] != 0;
+        a[a[1]] != 0
     then
         write "What the?\n";
     fi

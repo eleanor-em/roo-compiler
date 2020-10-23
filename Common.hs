@@ -3,7 +3,6 @@
 module Common where
 
 import Control.Monad.State
-import qualified Data.Bifunctor as B
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Either (lefts, rights)
@@ -30,13 +29,20 @@ instance Show StackSlot where
     show (StackSlot l) = show l
 
 -- | Concatenates a list of pairs of lists.
-concatPair ::[([a], [b])] -> ([a], [b])
+concatPair :: [([a], [b])] -> ([a], [b])
 concatPair = foldr combine ([], [])
     where
         combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
 
+mapPair :: (a -> b) -> (a, a) -> (b, b)
+mapPair f (x, y) = (f x, f y)
+
 tshow :: Show a => a -> Text
 tshow = T.pack . show
+
+tshowBool :: Bool -> Text
+tshowBool True = "true"
+tshowBool False = "false"
 
 countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun
@@ -45,9 +51,6 @@ countWithNoun x noun
 
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
-
-leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
-leftmap = B.first
 
 data Field = Field
     { fieldPos :: SourcePos
@@ -98,13 +101,18 @@ liftAlias (AliasArray size ty) = TArray size ty
 liftAlias (AliasRecord ty) = TRecord ty
 
 -- | Represents an error during static analysis. Fields are: line, col, message
-data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
+data AnalysisError = AnalysisError Int Int Text
+                   | AnalysisNote Int Int Text
+                   | AnalysisWarn Int Int Text
     deriving Show
 
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
 --   and wraps it in an Either.
-errorPos :: SourcePos -> Text -> Either AnalysisError a
-errorPos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
+errorPos :: SourcePos -> Text -> [AnalysisError]
+errorPos pos err = pure $ AnalysisError (sourceLine pos) (sourceColumn pos) err
+
+warnPos :: SourcePos -> Text -> [AnalysisError]
+warnPos pos warning = pure $ AnalysisWarn (sourceLine pos) (sourceColumn pos) warning
 
 -- | Creates an AnalysisError from a given SourcePos with a note giving more
 --   detail at another SourcePos.
@@ -112,13 +120,6 @@ errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
 errorWithNote errPos err notePos note =
     [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
     , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
-
--- | Lift a single error into a singleton list.
-liftOne :: Either a b -> Either [a] b
-liftOne = leftmap pure
--- | If Just x is given produces a list from x, otherwise returns an empty list.
-ifJust :: Maybe a -> (a -> [b]) -> [b]
-ifJust = flip concatMap
 
 -- | concats both left and right, but returns the one that exists 
 concatEither :: [Either [a] [b]] -> Either [a] [b]
@@ -143,10 +144,6 @@ addErrors errs = do
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val
-
-includeEither :: Either [AnalysisError] () -> EitherState s ()
-includeEither (Left errs) = addErrors errs
-includeEither _ = pure ()
 
 -- | `get` for EitherState.
 getEither :: EitherState s s
