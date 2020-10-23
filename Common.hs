@@ -3,7 +3,6 @@
 module Common where
 
 import Control.Monad.State
-import qualified Data.Bifunctor as B
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Either (lefts, rights)
@@ -52,9 +51,6 @@ countWithNoun x noun
 
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
-
-leftmap :: B.Bifunctor f => (a -> b) -> f a c -> f b c
-leftmap = B.first
 
 data Field = Field
     { fieldPos :: SourcePos
@@ -124,13 +120,6 @@ errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
 errorWithNote errPos err notePos note =
     [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
     , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
-
--- | Lift a single error into a singleton list.
-liftOne :: Either a b -> Either [a] b
-liftOne = leftmap pure
--- | If Just x is given produces a list from x, otherwise returns an empty list.
-ifJust :: Maybe a -> (a -> [b]) -> [b]
-ifJust = flip concatMap
 
 -- | concats both left and right, but returns the one that exists 
 concatEither :: [Either [a] [b]] -> Either [a] [b]
