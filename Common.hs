@@ -41,6 +41,10 @@ mapPair f (x, y) = (f x, f y)
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
+tshowBool :: Bool -> Text
+tshowBool True = "true"
+tshowBool False = "false"
+
 countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun
     | x == 1    = "1 " <> noun

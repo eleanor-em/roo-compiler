@@ -272,6 +272,11 @@ compileStatement locals (SIf expr statements) = do
     fiLabel <- getLabel 
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
+        case simplifyExpression expr' of
+            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
+                                                        ("`if` condition is always " <> tshowBool val)
+            _ -> pure ()
+
         -- get the register where true/false is stored + the current state after compilation
         register <- compileExpr locals (simplifyExpression expr')
         addInstrs (ozBranchOnFalse (fromJust register) fiLabel) 
@@ -299,6 +304,11 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
     afterLabel <- getLabel
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
+        case simplifyExpression expr' of
+            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
+                                                        ("`if` condition is always " <> tshowBool val)
+            _ -> pure ()
+
         -- get the register where true/false is stored + the current state after compilation
         register <- compileExpr locals (simplifyExpression expr')
         -- if condition is false -> go to else 
@@ -333,13 +343,18 @@ compileStatement locals (SWhile expr statements) = do
     falseLabel <- getLabel 
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
+        case simplifyExpression expr' of
+            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
+                                                        ("`while` condition is always " <> tshowBool val)
+            _ -> pure ()
+
         let conditionLvals = lvaluesOf (fromLocated expr)
         let nonModifiedLvals = filter (\lval -> not (any (modifiesLvalue lval) statements)) conditionLvals
 
         when (length nonModifiedLvals == length conditionLvals)
              (addErrors $ warnPos
                 (locate expr)
-                "possible infinite loop; the condition does not change between iterations")
+                "possible infinite loop: the condition does not change between iterations")
 
         addInstrsRaw [beginLabel <> ":"]
         -- get the register where true/false is stored + the current state after compilation
