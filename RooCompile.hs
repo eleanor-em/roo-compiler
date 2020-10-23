@@ -116,7 +116,7 @@ compileWrite locals expr = do
     let symbols = rootAliases (blockSyms current)
 
     addErrorsOr (analyseExpression symbols locals expr) $ \(TypedExpr ty expr) -> do
-        register <- compileExpr locals expr
+        register <- compileExpr locals (simplifyExpression expr)
 
         let op TInt  = addInstrs . ozWriteInt
             op TBool = addInstrs . ozWriteBool
@@ -155,7 +155,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
                         note = "`" <> lvalueName sym <> "` declared here:" in
                     addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
                 else do
-                    register <- compileExpr locals expr'
+                    register <- compileExpr locals (simplifyExpression expr')
                     storeSymbol locals sym <?> register
     where
         analyse symbols = do
@@ -208,7 +208,7 @@ compileStatement locals st@(SCall (Ident pos procName) args) = do
         compileArg (TypedExpr _ (ELvalue lvalue), ProcSymbol (RefSymbol _) _ _ _)
             = loadAddress locals lvalue
         compileArg (TypedExpr _ expr, _)
-            = compileExpr locals expr
+            = compileExpr locals (simplifyExpression expr)
 
         result current symbols = do
             (targetPos, targetProc) <- unwrapOr (Map.lookup procName $ rootProcs  symbols)
@@ -273,7 +273,7 @@ compileStatement locals (SIf expr statements) = do
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
         -- get the register where true/false is stored + the current state after compilation
-        register <- compileExpr locals expr'
+        register <- compileExpr locals (simplifyExpression expr')
         addInstrs (ozBranchOnFalse (fromJust register) fiLabel) 
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
         addInstrs $ addComment "fi"
@@ -300,7 +300,7 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
         -- get the register where true/false is stored + the current state after compilation
-        register <- compileExpr locals expr'
+        register <- compileExpr locals (simplifyExpression expr')
         -- if condition is false -> go to else 
         addInstrs (ozBranchOnFalse (fromJust register) elseLabel) 
         -- otherwise do these statements 
@@ -343,7 +343,7 @@ compileStatement locals (SWhile expr statements) = do
 
         addInstrsRaw [beginLabel <> ":"]
         -- get the register where true/false is stored + the current state after compilation
-        register <- compileExpr locals expr'
+        register <- compileExpr locals (simplifyExpression expr')
         -- if condition is false --> skip the while loop 
         addInstrs (ozBranchOnFalse (fromJust register) falseLabel) 
         -- otherwise do these statements

@@ -1,7 +1,7 @@
 # Testing simple input-output
 
 procedure main()
-boolean stuff;
+boolean something;
 {
     write "Type a boolean: ";
     read    something;

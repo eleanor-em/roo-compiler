@@ -14,6 +14,7 @@ module RooAst where
 import Data.Text (Text)
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
+import Text.Parsec.Pos (initialPos)
 
 -- | A Roo Program node consists of: 
 -- 
@@ -117,6 +118,9 @@ data Expression
     | EBinOp BinOp LocatedExpr LocatedExpr
     | EUnOp UnOp LocatedExpr
     deriving (Show, Eq)
+
+liftExpr :: Expression -> LocatedExpr
+liftExpr = LocatedExpr (initialPos "")
 
 -- | An Expression with a source location.
 data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression }

@@ -137,6 +137,64 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                  , tshow ltype
                  , "`" ]
 
+simplifyExpression :: Expression -> Expression
+simplifyExpression expr@(EUnOp UnNot inner)
+    = case simplifyExpression (fromLocated inner) of
+        EConst (LitBool val) -> EConst (LitBool (not val))
+        _ -> expr
+
+simplifyExpression expr@(EUnOp UnNegate inner)
+    = case simplifyExpression (fromLocated inner) of
+        EConst (LitInt val) -> EConst (LitInt (-val))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinAnd lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs && rhs))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinOr lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs || rhs))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinPlus lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs + rhs))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinMinus lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs - rhs))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinTimes lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs * rhs))
+        _ -> expr
+
+simplifyExpression expr@(EBinOp BinDivide lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs `div` rhs))
+        _ -> expr
+
+-- The only remaining cases are comparison operators
+simplifyExpression expr@(EBinOp binop lhs rhs)
+    = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
+        (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs `op` rhs))
+        (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitBool (lhs `op` rhs))
+        _ -> expr
+    where
+        a `op` b = case binop of
+            BinLt  -> a < b
+            BinLte -> a <= b
+            BinGt  -> a > b
+            BinGte -> a >= b
+            BinNeq -> a /= b
+            _      -> a == b -- this will only match BinEq
+
+simplifyExpression expr = expr
+
 data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
                  | TypedValLvalue Type StackSlot Expression Text SourcePos
 
@@ -177,7 +235,7 @@ analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
 
                     return $ symToTypedLvalue
                         (ProcSymbol (cons sym ty)  (symLocation sym) pos ident)
-                        (fromLocated indexExpr)
+                        (simplifyExpression (fromLocated indexExpr))
 
                 ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
         Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
@@ -225,7 +283,7 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
                             index <- if sizeof ty /= 1 then
                                 return $ EBinOp BinTimes (LocatedExpr pos (EConst (LitInt (sizeof ty)))) indexExpr
                             else
-                                return $ fromLocated indexExpr
+                                return $ simplifyExpression (fromLocated indexExpr)
 
                             return $ symToTypedLvalue
                                 (ProcSymbol (cons sym innerTy) (symLocation sym) pos (arrName <> "[]" <> fldName))
