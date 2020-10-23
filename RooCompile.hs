@@ -13,7 +13,7 @@ import RooAnalyse
 import RooAst
 import SymTable
 import Oz
-import Control.Monad (unless)
+import Control.Monad (when, unless)
 import RooPrettyPrinter (prettyStatement, prettyExpr)
 
 -- | effectively now the global state 
@@ -53,12 +53,12 @@ addInstrsRaw instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
-compileProgram :: Program -> Either [AnalysisError] [Text]
+compileProgram :: Program -> ([AnalysisError], [Text])
 compileProgram program@(Program _ _ procs) = do
     let (errs, symbols) = getAllSymbols program
 
     if not (hasMain symbols) then
-        Left (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"])
+        (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"], [])
     else do
         -- Compile all the procedures in our program.
         let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
@@ -66,10 +66,7 @@ compileProgram program@(Program _ _ procs) = do
 
         let allErrs = errs <> errs'
 
-        if null allErrs then
-            Right (separate output)
-        else
-            Left allErrs
+        (allErrs, separate output)
     where
         separate  = map (<> "\n")
         addHeader = (["call proc_main", "halt"] <>)
@@ -90,14 +87,13 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
 
             let paramCount = length $ localParams locals
             let localPrologue = ozIntConst (Register 0) 0
-                             <> concatMap (`ozStore` Register 0) (map StackSlot [paramCount..stackSize - 1])
+                             <> concatMap ((`ozStore` Register 0) . StackSlot)
+                                          [paramCount..stackSize - 1]
 
             addInstrsRaw $ ["\n" <> makeProcLabel procName <> ":"]
                         <> addComment "prologue"
             addInstrs (prologue <> argPrologue <> localPrologue)
 
-            -- TODO: initialise locals to 0
-            
             mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements
 
             addInstrs (addComment "epilogue" <> epilogue <> ["return"])
@@ -166,7 +162,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
             TypedExpr ty' expr' <- analyseExpression (rootAliases symbols) locals expr
             sym <- analyseLvalue (rootAliases symbols) locals lvalue
             return (ty', expr', sym)
-        typeError ty = includeEither $ liftOne $ errorPos (locateLvalue lvalue) $
+        typeError ty = addErrors $ errorPos (locateLvalue lvalue) $
             "expected variable of primitive type on LHS of `<-`, found `" <> tshow ty <> "`"
 
 compileStatement locals st@(SRead lvalue) = do
@@ -186,7 +182,7 @@ compileStatement locals st@(SRead lvalue) = do
             _     -> do
                 -- TODO: error with note
                 let err  = "expecting `integer` or `boolean` after `read`, found `" <> tshow ty <> "`" in
-                    includeEither $ liftOne $ errorPos (lvaluePos sym) err
+                    addErrors $ errorPos (lvaluePos sym) err
 
         storeLvalue locals lvalue (Register 0)
 
@@ -216,7 +212,7 @@ compileStatement locals st@(SCall (Ident pos procName) args) = do
 
         result current symbols = do
             (targetPos, targetProc) <- unwrapOr (Map.lookup procName $ rootProcs  symbols)
-                                                (liftOne $ errorPos pos $
+                                                (Left $ errorPos pos $
                                                     "unknown procedure `" <> procName <> "`")
             let params = localParams targetProc
 
@@ -288,8 +284,8 @@ compileStatement locals (SIf expr statements) = do
 
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
-                liftOne $ errorPos (locate expr)
-                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+                Left $ errorPos (locate expr)
+                                ("expecting `boolean`, found `" <> tshow ty <> "`")
             else
                 return expr'
 
@@ -322,8 +318,8 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
 
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
-                liftOne $ errorPos (locate expr)
-                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+                Left $ errorPos (locate expr)
+                                ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
             else
                 return expr'
 
@@ -337,7 +333,14 @@ compileStatement locals (SWhile expr statements) = do
     falseLabel <- getLabel 
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
-        
+        let conditionLvals = lvaluesOf (fromLocated expr)
+        let nonModifiedLvals = filter (\lval -> not (any (modifiesLvalue lval) statements)) conditionLvals
+
+        when (length nonModifiedLvals == length conditionLvals)
+             (addErrors $ warnPos
+                (locate expr)
+                "possible infinite loop; the condition does not change between iterations")
+
         addInstrsRaw [beginLabel <> ":"]
         -- get the register where true/false is stored + the current state after compilation
         register <- compileExpr locals expr'
@@ -356,8 +359,8 @@ compileStatement locals (SWhile expr statements) = do
 
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
-                liftOne $ errorPos (locate expr)
-                                   ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
+                Left $ errorPos (locate expr)
+                                ("expecting `" <> tshow TBool <> "`, found `" <> tshow ty <> "`")
             else
                 return expr'
 

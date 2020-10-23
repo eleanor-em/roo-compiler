@@ -98,13 +98,18 @@ liftAlias (AliasArray size ty) = TArray size ty
 liftAlias (AliasRecord ty) = TRecord ty
 
 -- | Represents an error during static analysis. Fields are: line, col, message
-data AnalysisError = AnalysisError Int Int Text | AnalysisNote Int Int Text
+data AnalysisError = AnalysisError Int Int Text
+                   | AnalysisNote Int Int Text
+                   | AnalysisWarn Int Int Text
     deriving Show
 
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
 --   and wraps it in an Either.
-errorPos :: SourcePos -> Text -> Either AnalysisError a
-errorPos pos err = Left $ AnalysisError (sourceLine pos) (sourceColumn pos) err
+errorPos :: SourcePos -> Text -> [AnalysisError]
+errorPos pos err = pure $ AnalysisError (sourceLine pos) (sourceColumn pos) err
+
+warnPos :: SourcePos -> Text -> [AnalysisError]
+warnPos pos warning = pure $ AnalysisWarn (sourceLine pos) (sourceColumn pos) warning
 
 -- | Creates an AnalysisError from a given SourcePos with a note giving more
 --   detail at another SourcePos.
@@ -143,10 +148,6 @@ addErrors errs = do
 addErrorsOr :: Either [AnalysisError] a -> (a -> EitherState s ()) -> EitherState s ()
 addErrorsOr (Left errs) _ = addErrors errs
 addErrorsOr (Right val) f = f val
-
-includeEither :: Either [AnalysisError] () -> EitherState s ()
-includeEither (Left errs) = addErrors errs
-includeEither _ = pure ()
 
 -- | `get` for EitherState.
 getEither :: EitherState s s

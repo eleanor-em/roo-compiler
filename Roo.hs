@@ -107,14 +107,45 @@ getAst progNames =
                     hPrint stderr err
                     exitFailure
 
-data ConsoleCol = White | Green | Blue | Red | Reset
+data ConsoleCol = White | Green | Blue | Red | Yellow | Reset
 
 addCol :: ConsoleCol -> Text
-addCol White = "\x1b[1;37m"
-addCol Green = "\x1b[1;32m"
-addCol Blue  = "\x1b[1;34m"
-addCol Red   = "\x1b[1;31m"
-addCol Reset = "\x1b[1;0m"
+addCol White  = "\x1b[1;37m"
+addCol Green  = "\x1b[1;32m"
+addCol Blue   = "\x1b[1;34m"
+addCol Red    = "\x1b[1;31m"
+addCol Yellow = "\x1b[1;33m"
+addCol Reset  = "\x1b[1;0m"
+
+location :: Int -> Int -> String
+location 0 0  = ""
+location line col = ":" <> show line <> ":" <> show col
+
+isWarning :: AnalysisError -> Bool
+isWarning AnalysisWarn {} = True
+isWarning _ = False
+
+label :: String -> [String] -> Int -> Int -> Text -> Text -> IO ()
+label progName raw line col err typeline = do
+    T.hPutStrLn stderr $ mconcat
+        [ addCol White
+        , pack $ progName <> location line col <> ": "
+        , typeline
+        , err ]
+    when (line > 0) $ T.hPutStrLn stderr $ mconcat
+        [ pack $ raw !! (line - 1) <> "\n"
+        , pack $ take (col - 1) $ cycle " "
+        , addCol Green <> "^" <> addCol Reset]
+
+labelError :: String -> [String] -> AnalysisError -> IO ()
+labelError progName raw (AnalysisError line col err)
+    = label progName raw line col err (addCol Red <> "error: " <> addCol Reset)
+
+labelError progName raw (AnalysisNote line col err)
+    = label progName raw line col err (addCol Blue <> "note: " <> addCol Reset)
+
+labelError progName raw (AnalysisWarn line col err)
+    = label progName raw line col err (addCol Yellow <> "warning: " <> addCol Reset)
 
 -- | Main function of Roo. Grab the flags, and print a usage message if incorrect
 -- or if the help flag is specified. Otherwise, pass arguments to the meat of the
@@ -127,35 +158,14 @@ main = do
         (ast, raw) <- getAst progNames
         -- At this point, progNames is known to be non-empty
         let progName = head progNames
-        case compileProgram ast of
-            Left errs -> do
-                    mapM_ labelError errs
-                    exitFailure
-                where
-                    location 0 0  = ""
-                    location line col = ":" <> show line <> ":" <> show col
 
-                    label line col err typeline = do
-                        T.hPutStrLn stderr $ mconcat
-                            [ addCol White
-                            , pack $ progName <> location line col <> ": "
-                            , typeline
-                            , err ]
-                        when (line > 0) $ T.hPutStrLn stderr $ mconcat
-                            [ pack $ raw !! (line - 1) <> "\n"
-                            , pack $ take (col - 1) $ cycle " "
-                            , addCol Green <> "^" <> addCol Reset]
-
-                    labelError (AnalysisError line col err)
-                        = label line col err (addCol Red <> "error: " <> addCol Reset)
-
-                    labelError (AnalysisNote line col err)
-                        = label line col err (addCol Blue <> "note: " <> addCol Reset)
-
-            Right output -> do
-                T.putStr $ mconcat output
-                exitSuccess
-
+        let (errs, output) = compileProgram ast
+        mapM_ (labelError progName raw) errs
+        if null errs || all isWarning errs then do
+            T.putStr $ mconcat output
+            exitSuccess
+        else
+            exitFailure
     else case head flags of
         Help -> do
             putStr usage

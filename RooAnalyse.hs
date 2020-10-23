@@ -35,7 +35,7 @@ typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
     indexTy <- typecheckExpression aliases locals expr
     case typeof indexTy of
         TInt -> return ()
-        ty -> liftOne $ errorPos pos $
+        ty -> Left $ errorPos pos $
             "expected index expression of type `integer`, found `" <> tshow ty <> "`"
 
 -- | Type-checks an expression, and returns the expression annotated with its type
@@ -43,8 +43,8 @@ typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
 typecheckExpression :: AliasTable -> LocalTable -> Expression -> Either [AnalysisError] TypedExpr
 typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
-        Just sym -> pure    $ TypedExpr (procSymType $ symType sym) expr
-        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+        Just sym -> pure $ TypedExpr (procSymType $ symType sym) expr
+        Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
 typecheckExpression aliases locals expr@(ELvalue lvalue) = do
     ty <- analyseLvalue aliases locals lvalue
@@ -60,15 +60,15 @@ typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
 typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
-        TBool -> pure    $ TypedExpr TBool expr
-        ty    -> liftOne $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
+        TBool -> pure $ TypedExpr TBool expr
+        ty    -> Left $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
     exprType <- typeof <$> typecheckExpression aliases locals inner
     case exprType of
-        TInt -> pure    $ TypedExpr TInt expr
-        ty   -> liftOne $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
+        TInt -> pure $ TypedExpr TInt expr
+        ty   -> Left $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
 
 -- For binary expressions there are three cases:
 --  1. The operator is a boolean operator (in which case both sides must be boolean)
@@ -83,7 +83,7 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
         if ltype == rtype then
             pure    $ TypedExpr TBool expr
         else
-            liftOne $ errorPos lPos $ mconcat
+            Left $ errorPos lPos $ mconcat
                 [ "operands do not match: `"
                 , tshow ltype
                 , "` vs `"
@@ -100,16 +100,16 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                 if ltype == rtype then
                     pure    $ TypedExpr ltype expr
                 else
-                    liftOne $ errorPos lPos $ mconcat
+                    Left $ errorPos lPos $ mconcat
                         [ "operands do not match: `"
                         , tshow ltype
                         , "` vs `"
                         , tshow rtype
                         , "`" ]
             else
-                liftOne $ errorPos rPos "cannot compare `string`"
+                Left $ errorPos rPos "cannot compare `string`"
         else
-            liftOne $ errorPos lPos "cannot compare `string`"
+            Left $ errorPos lPos "cannot compare `string`"
     where
         checkBoth ty = do
             ltype <- typeof <$> typecheckExpression aliases locals lhs
@@ -119,7 +119,7 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                 if rtype == ty then
                     pure    $ TypedExpr ty expr
                 else
-                    liftOne $ errorPos rPos $ mconcat
+                    Left $ errorPos rPos $ mconcat
                         [ "expecting `"
                         , tshow ty
                         , "` on RHS of `"
@@ -128,7 +128,7 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                         , tshow rtype
                         , "`" ]
             else
-                liftOne $ errorPos lPos $ mconcat
+                Left $ errorPos lPos $ mconcat
                  [ "expecting `"
                  , tshow ty
                  , "` on LHS of `"
@@ -165,7 +165,7 @@ noOffset = EConst (LitInt 0)
 analyseLvalue :: AliasTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
 analyseLvalue _ locals (LId (Ident pos name)) = do
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
-                    (liftOne $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
+                    (Left $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
     return $ symToTypedLvalue sym noOffset
 
 analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
@@ -179,8 +179,8 @@ analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
                         (ProcSymbol (cons sym ty)  (symLocation sym) pos ident)
                         (fromLocated indexExpr)
 
-                ty -> liftOne $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> liftOne $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+                ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
+        Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol
@@ -188,7 +188,7 @@ analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
 
 analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
     recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
-                       (liftOne $ errorPos recPos $ "in statement: unknown variable `" <> recName <> "`")
+                       (Left $ errorPos recPos $ "in statement: unknown variable `" <> recName <> "`")
 
     let ty = rawSymType recSym
 
@@ -211,7 +211,7 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
 
             return $ cons (fieldTy fieldSym) location offset (recName <> "." <> fldName) fldPos
 
-        _ -> liftOne $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
+        _ -> Left $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
 
 analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
     = case Map.lookup arrName (localSymbols locals) of
@@ -231,11 +231,39 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
                                 (ProcSymbol (cons sym innerTy) (symLocation sym) pos (arrName <> "[]" <> fldName))
                                 (EBinOp BinPlus (LocatedExpr pos ((EConst . LitInt .stackSlotToInt) offset))
                                                 (LocatedExpr pos index))
-                        _ -> liftOne $ errorPos fldPos $ "in expression: unknown field name `" <> fldName <> "`"
+                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name `" <> fldName <> "`"
 
-                ty -> liftOne $ errorPos arrPos $ "expected array of records, found `" <> tshow ty <> "`"
-        Nothing  -> liftOne $ errorPos arrPos $ "in expression: unknown variable `" <> arrName <> "`"
+                ty -> Left $ errorPos arrPos $ "expected array of records, found `" <> tshow ty <> "`"
+        Nothing  -> Left $ errorPos arrPos $ "in expression: unknown variable `" <> arrName <> "`"
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol
             RefSymbol _ -> RefSymbol
+
+-- | Used to detect possible infinite loops.
+lvaluesOf :: Expression -> [Lvalue]
+lvaluesOf (ELvalue lval) = [lval]
+lvaluesOf (EUnOp _ expr) = lvaluesOf (fromLocated expr)
+lvaluesOf (EBinOp _ lhs rhs) = lvaluesOf (fromLocated lhs) <> lvaluesOf (fromLocated rhs)
+lvaluesOf _ = []
+
+modifiesLvalue :: Lvalue -> Statement -> Bool
+modifiesLvalue lval (SAssign lval' _)
+    = nameLvalue lval == nameLvalue lval'
+
+modifiesLvalue lval (SRead lval')
+    = nameLvalue lval == nameLvalue lval'
+
+modifiesLvalue lval (SCall _ exprs)
+    = any (\expr -> lval `elem` lvaluesOf (fromLocated expr)) exprs
+
+modifiesLvalue lval (SIf _ body)
+    = any (modifiesLvalue lval) body
+
+modifiesLvalue lval (SIfElse _ bodyIf bodyElse)
+    = any (modifiesLvalue lval) bodyIf || any (modifiesLvalue lval) bodyElse
+
+modifiesLvalue lval (SWhile _ body)
+    = any (modifiesLvalue lval) body
+
+modifiesLvalue _ _ = False

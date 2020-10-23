@@ -124,7 +124,7 @@ lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, 
 lookupType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
         Just (_, ty) -> Right (pos, liftAlias ty)
-        Nothing      -> liftOne $ errorPos pos $
+        Nothing      -> Left  $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
 
 -- | Analyse a single array type declaration and extract any symbols.
