@@ -62,7 +62,7 @@ instance Show Field where
     show = show . fieldTy
 
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Field)
+data Type = TBool | TString | TInt | TArray Text Int Type | TRecord Text (Map Text Field)
     deriving Eq
 
 liftPrimitive :: PrimitiveType -> Type
@@ -73,15 +73,15 @@ instance Show Type where
     show TBool   = "boolean"
     show TString = "string"
     show TInt    = "integer"
-    show (TArray size ty) = show ty <> "[" <> show size <> "]"
-    show (TRecord ty) = show ty
+    show (TArray _ size ty) = show ty <> "[" <> show size <> "]"
+    show (TRecord _ ty) = show ty
 
 sizeof :: Type -> Int
 sizeof TBool = 1
 sizeof TString = 1
 sizeof TInt = 1
-sizeof (TArray size ty) = size * sizeof ty
-sizeof (TRecord map) = foldr ((+) . sizeof . fieldTy) 0 map
+sizeof (TArray _ size ty) = size * sizeof ty
+sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
 
 -- | Specific types for aliases allow us to check more correctness without as
 --   much clumsy conversion.
@@ -96,9 +96,9 @@ instance Show AliasType where
         , "}" ]
 
 -- | Converts an AliasType into a general Type.
-liftAlias :: AliasType -> Type
-liftAlias (AliasArray size ty) = TArray size ty
-liftAlias (AliasRecord ty) = TRecord ty
+liftAlias :: Text -> AliasType -> Type
+liftAlias aliasName (AliasArray size ty) = TArray aliasName size ty
+liftAlias aliasName (AliasRecord ty) = TRecord aliasName ty
 
 -- | Represents an error during static analysis. Fields are: line, col, message
 data AnalysisError = AnalysisError Int Int Text
