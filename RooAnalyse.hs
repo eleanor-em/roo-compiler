@@ -22,7 +22,7 @@ hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
 
 -- | An expression paired with its type.
 data TypedExpr = TypedExpr 
-    { typeof :: Type
+    { exprType :: Type
     , innerExp :: Expression }
 
 -- | Type-checks a located expression, and returns the expression annotated with its type
@@ -34,7 +34,7 @@ analyseExpression table locals expr = typecheckExpression table locals $ fromLoc
 typecheckArrayIndex :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] ()
 typecheckArrayIndex table locals (LocatedExpr pos expr) = do
     indexTy <- typecheckExpression table locals expr
-    case typeof indexTy of
+    case exprType indexTy of
         TInt -> return ()
         ty -> Left $ errorPos pos $
             "expected index expression of type `integer`, found `" <> tshow ty <> "`"
@@ -42,10 +42,12 @@ typecheckArrayIndex table locals (LocatedExpr pos expr) = do
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
 typecheckExpression :: RootTable -> LocalTable -> Expression -> Either [AnalysisError] TypedExpr
-typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
+typecheckExpression table locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> pure $ TypedExpr (procSymType $ symType sym) expr
-        Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+        Nothing  -> case Map.lookup ident (rootFuncPtrs table) of
+            Just (_, ty) -> pure $ TypedExpr ty expr
+            Nothing      -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
 typecheckExpression table locals expr@(ELvalue lvalue) = do
     ty <- analyseLvalue table locals lvalue
@@ -59,14 +61,14 @@ typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
 
 -- Boolean negations must check whether the inner expression is boolean.
 typecheckExpression table locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
-    exprType <- typeof <$> typecheckExpression table locals inner
+    exprType <- exprType <$> typecheckExpression table locals inner
     case exprType of
         TBool -> pure $ TypedExpr TBool expr
         ty    -> Left $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression table locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
-    exprType <- typeof <$> typecheckExpression table locals inner
+    exprType <- exprType <$> typecheckExpression table locals inner
     case exprType of
         TInt -> pure $ TypedExpr TInt expr
         ty   -> Left $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
@@ -79,8 +81,8 @@ typecheckExpression table locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) =
 typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs))
     | op `elem` [BinOr, BinAnd]                                 = checkBoth TBool
     | op `elem` [BinLt, BinLte, BinEq, BinNeq, BinGt, BinGte]   = do
-        ltype <- typeof <$> typecheckExpression table locals lhs
-        rtype <- typeof <$> typecheckExpression table locals rhs
+        ltype <- exprType <$> typecheckExpression table locals lhs
+        rtype <- exprType <$> typecheckExpression table locals rhs
         if ltype == rtype then
             pure    $ TypedExpr TBool expr
         else
@@ -93,8 +95,8 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
         
     | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
-        ltype <- typeof <$> typecheckExpression table locals lhs
-        rtype <- typeof <$> typecheckExpression table locals rhs
+        ltype <- exprType <$> typecheckExpression table locals lhs
+        rtype <- exprType <$> typecheckExpression table locals rhs
         
         if ltype /= TString then
             if rtype /= TString then
@@ -113,8 +115,8 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
             Left $ errorPos lPos "cannot compare `string`"
     where
         checkBoth ty = do
-            ltype <- typeof <$> typecheckExpression table locals lhs
-            rtype <- typeof <$> typecheckExpression table locals rhs
+            ltype <- exprType <$> typecheckExpression table locals lhs
+            rtype <- exprType <$> typecheckExpression table locals rhs
             
             if ltype == ty then
                 if rtype == ty then
@@ -143,11 +145,14 @@ typecheckExpression table locals expr@(EFunc func args) = do
     return $ TypedExpr ty expr
 
 typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
-                           -> Either [AnalysisError] ([TypedExpr], [ProcSymbol], Type)
+                           -> Either [AnalysisError] ([TypedExpr], [ProcSymType], Type)
 typecheckCall table locals (Ident pos name) args = do
-    (targetPos, targetProc) <- unwrapOr (lookupProc table name)
-                                        (Left $ errorPos pos $ "unknown procedure `" <> name <> "`")
-    let params = localParams targetProc
+    (params, retType, targetPos) <- case lookupProc table name of
+        Just (pos, locals) -> pure (map symType (localParams locals), localRetType locals, Just pos)
+
+        Nothing -> case rawSymType <$> Map.lookup name (localSymbols locals) of
+            Just (TFunc params ret) -> pure (params, ret, Nothing)
+            _                       -> Left $ errorPos pos $ "unknown procedure `" <> name <> "`"
 
     -- Check # arguments = # parameters
     unless  (length args == length params)
@@ -155,23 +160,24 @@ typecheckCall table locals (Ident pos name) args = do
                     [ "`", name, "` expects ", countWithNoun (length params) "parameter"
                     , " but was given ", tshow (length args) ]
                  note = "`" <> name <> "` declared here:" in
-                Left $ errorWithNote pos err targetPos note)
+                case targetPos of
+                    Just targetPos -> Left $ errorWithNote pos err targetPos note
+                    Nothing        -> Left $ errorPos pos err)
 
     -- Type-check arguments
     typedArgs <- concatEither $ map ((pure <$>) . analyseExpression table locals)
                                     args
 
     -- Check argument types match parameter types
-    let mismatched = filter (\((_, a), b) -> typeof a /= rawSymType b)
+    let mismatched = filter (\((_, a), b) -> exprType a /= procSymType b)
                             (zip (enumerate typedArgs) params)
 
     let reportErr ((i, expr), symbol) = let err  = mconcat [ "in argument: expecting `"
-                                                , tshow $ rawSymType symbol
+                                                , tshow $ procSymType symbol
                                                 , "`, found `"
-                                                , tshow $ typeof expr
-                                                , "`" ]
-                                            note = "parameter declared here:"  in
-            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+                                                , tshow $ exprType expr
+                                                , "`" ] in
+            Left $ errorPos (locate $ args !! i) err
 
     concatEither $ map reportErr mismatched
 
@@ -179,20 +185,18 @@ typecheckCall table locals (Ident pos name) args = do
     let mismatched = filter (\((_, a), b) -> not (checkRefArgs a b))
                             (zip (enumerate typedArgs) params)
 
-    let reportErr ((i, _), symbol) = let err  = mconcat [ "in argument: expecting lvalue" ]
-                                         note = "parameter declared here:" in
-            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+    let reportErr ((i, _), _) = Left $ errorPos (locate $ args !! i) "in argument: expecting lvalue"
 
     concatEither $ map reportErr mismatched
 
-    return (typedArgs, params, localRetType targetProc)
+    return (typedArgs, params, retType)
     
     where
         -- | Checks whether the expression and symbol are either:
         --   lvalue + ref
         --   any + val
-        checkRefArgs (TypedExpr _ (ELvalue _)) (ProcSymbol (RefSymbol _) _ _ _) = True
-        checkRefArgs _ (ProcSymbol (RefSymbol _) _ _ _) = False
+        checkRefArgs (TypedExpr _ (ELvalue _)) (RefSymbol _) = True
+        checkRefArgs _ (RefSymbol _) = False
         checkRefArgs _ _ = True
 
 simplifyExpression :: Expression -> Expression
@@ -324,7 +328,7 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
                         index
 
                 ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+        Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable `" <> ident <> "`"
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol
@@ -387,7 +391,7 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
 
                 ty -> Left $ errorPos arrPos $ "expected array of records, found `"
                                             <> tshow ty <> "`"
-        Nothing  -> Left $ errorPos arrPos $ "in expression: unknown variable `"
+        Nothing  -> Left $ errorPos arrPos $ "in array record expression: unknown variable `"
                                           <> arrName <> "`"
     where
         cons ty = case symType ty of

@@ -19,7 +19,7 @@ instance Show Register where
     show (Register r) = "r" <> show r
 
 newtype StackSlot = StackSlot Int
-    deriving (Eq, Num)
+    deriving (Ord, Eq, Num)
 
 stackSlotToInt :: StackSlot -> Int
 stackSlotToInt (StackSlot x) = x
@@ -55,18 +55,32 @@ data Field = Field
     { fieldPos :: SourcePos
     , fieldOffset :: StackSlot
     , fieldTy :: Type }
-    deriving Eq
+    deriving (Ord, Eq)
 
 instance Show Field where
     show = show . fieldTy
 
--- | The different data types.
-data Type = TBool | TString | TInt | TArray Text Int Type | TRecord Text (Map Text Field) | TVoid
-    deriving Eq
+-- | A procedure symbol can be either a value or a reference.
+data ProcSymType = ValSymbol Type | RefSymbol Type
+    deriving (Ord, Eq)
 
-liftPrimitive :: PrimitiveType -> Type
-liftPrimitive RawBoolType = TBool
-liftPrimitive RawIntType = TInt
+procSymType :: ProcSymType -> Type
+procSymType (ValSymbol ty) = ty
+procSymType (RefSymbol ty) = ty
+
+instance Show ProcSymType where
+    show (ValSymbol ty) = show ty <> " val"
+    show (RefSymbol ty) = show ty <> " ref"
+
+-- | The different data types.
+data Type = TBool
+          | TString
+          | TInt
+          | TArray Text Int Type
+          | TRecord Text (Map Text Field)
+          | TFunc [ProcSymType] Type
+          | TVoid
+    deriving (Ord, Eq)
 
 instance Show Type where
     show TBool   = "boolean"
@@ -75,6 +89,11 @@ instance Show Type where
     show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
     show (TRecord name _) = show name <> "{}"
     show TVoid   = "void"
+    show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
+
+liftPrimitive :: PrimitiveType -> Type
+liftPrimitive RawBoolType = TBool
+liftPrimitive RawIntType = TInt
 
 sizeof :: Type -> Int
 sizeof TBool = 1
@@ -83,6 +102,7 @@ sizeof TInt = 1
 sizeof (TArray _ size ty) = size * sizeof ty
 sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
 sizeof TVoid = 0
+sizeof (TFunc _ _) = 1
 
 isPrimitive :: Type -> Bool
 isPrimitive TBool = True

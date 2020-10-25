@@ -68,7 +68,7 @@ prettyProcedure (Procedure _ header Nothing varDecls body) = mconcat
 prettyProcedure (Procedure _ header (Just retType) varDecls body) = mconcat
     [ prettyHeader header
     , " -> "
-    , prettyPrimitiveType retType
+    , prettyTypeInner retType
     , "\n"
     , mconcat $ map prettyVarDecls varDecls
     , "{\n"
@@ -90,6 +90,9 @@ prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
 prettyTypeInner :: TypeName -> Text
 prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
 prettyTypeInner (AliasTypeName ident) = fromIdent ident
+prettyTypeInner (FunctionTypeName params retType)
+    = "procedure(" <> foldMap prettyParameter params <> ")"
+                   <> maybe "" prettyTypeInner retType
 
 -- | Replaces a FieldDecl node with a string 
 prettyFieldDecl :: FieldDecl -> Text 

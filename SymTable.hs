@@ -2,6 +2,7 @@
 
 module SymTable where
 
+import Debug.Trace (trace)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
@@ -12,18 +13,7 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import Common
 import RooAst
-
--- | A procedure symbol can be either a value or a reference.
-data ProcSymType = ValSymbol Type | RefSymbol Type
-    deriving Eq
-
-procSymType :: ProcSymType -> Type
-procSymType (ValSymbol ty) = ty
-procSymType (RefSymbol ty) = ty
-
-instance Show ProcSymType where
-    show (ValSymbol ty) = show ty <> " val"
-    show (RefSymbol ty) = show ty <> " ref"
+import Text.Parsec.Pos (initialPos)
 
 -- | Represents a procedure symbol with a type, location on the stack, and source position.
 data ProcSymbol = ProcSymbol
@@ -70,11 +60,15 @@ localStackSize (LocalTable _ syms _ _) = foldr (\x acc -> actualSize x + acc) 0 
 -- | Shorthand for the two main types of symbol tables.
 type AliasTable = Map Text (SourcePos, Type)
 type ProcTable = Map Text (SourcePos, LocalTable)
+type FuncPtrTable = Map Text (Int, Type)
+type Vtable = Map Int (SourcePos, LocalTable)
 
 -- | The root symbol table contains a table of aliases and procedures.
 data RootTable = RootTable
     { rootAliases :: AliasTable
-    , rootProcs :: ProcTable }
+    , rootProcs :: ProcTable
+    , rootFuncPtrs :: FuncPtrTable
+    , rootVtable :: Vtable }
 
 data RecordSymbolState = RecordSymbolState
     { rsOffset :: Int
@@ -82,6 +76,14 @@ data RecordSymbolState = RecordSymbolState
 
 lookupProc :: RootTable -> Text -> Maybe (SourcePos, LocalTable)
 lookupProc symbols procName = Map.lookup procName (rootProcs symbols)
+
+data ProcState = ProcState
+    { procTable :: ProcTable
+    , procFuncPtrs :: FuncPtrTable
+    , procVtable :: Vtable }
+
+initialProcState :: ProcState
+initialProcState = ProcState Map.empty Map.empty Map.empty
 
 -- | Procedures additionally need to track the stack location being used and the parameters' types.
 data ProcSymbolState = ProcSymbolState
@@ -93,25 +95,40 @@ data ProcSymbolState = ProcSymbolState
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
 getAllSymbols (Program records arrays procs) = do
     let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
-    let symbols = RootTable records' Map.empty
+    let symbols = RootTable records' Map.empty Map.empty Map.empty
 
     let (errs', aliases) = execEither (mapM_ (symbolsArray symbols) arrays) records'
-    let symbols = RootTable aliases Map.empty
+    let symbols = RootTable aliases Map.empty Map.empty Map.empty
 
-    let (errs'', procs') = execEither (mapM_ (symbolsProc symbols) procs) Map.empty    
-    let symbols = RootTable aliases procs'
+    let (errs'', ProcState procs' funcPtrs vtable) = execEither (mapM_ (symbolsProc symbols) procs)
+                                                                initialProcState
+
+    let symbols = RootTable aliases procs' funcPtrs vtable
     
     (errs <> errs' <> errs'', symbols)
 
 -- | Looks up a possibly-aliased type and ensures it is well-formed.
 lookupType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
 lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
+
 lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
-lookupType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
+
+lookupType (RootTable aliases _ _ _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
         Just (_, ty) -> Right (pos, ty)
         Nothing      -> Left  $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
+
+lookupType table (LocatedTypeName pos (FunctionTypeName params retType)) = do
+    paramTys <- mapM toProcSym params
+    let retType' = case retType of
+            Just (PrimitiveTypeName ty) -> liftPrimitive ty
+            _                           -> TVoid
+    return (pos, TFunc paramTys retType')
+
+    where
+        toProcSym (TypeParam ty _) = RefSymbol . snd <$> lookupType table ty
+        toProcSym (ValParam ty _)  = ValSymbol . snd <$> lookupType table ty
 
 -- | Analyse a single array type declaration and extract any symbols.
 symbolsArray :: RootTable -> ArrayType -> EitherState AliasTable ()
@@ -166,9 +183,9 @@ checkFieldDecl (FieldDecl ty (Ident pos name)) = do
 -- Procedures
 -----------------------------------
 -- | Analyse a single procedure declaration and extract any symbols.
-symbolsProc :: RootTable -> Procedure -> EitherState ProcTable ()
+symbolsProc :: RootTable -> Procedure -> EitherState ProcState ()
 symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType decls _) = do
-    table <- getEither
+    (ProcState table funcPtrs vtable) <- getEither
     
     let initial = ProcSymbolState 0 Map.empty []
     let (errs, procSymbols) = execEither (mapM_ (symbolsParam symbols) params) initial
@@ -177,18 +194,31 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType de
     let (errs, procSymbols') = execEither (mapM_ (symbolsDecl symbols) decls) procSymbols
     addErrors errs
 
-    let params = psParams procSymbols'
-    let procs = psTable procSymbols'
+    let params' = psParams procSymbols'
+    let procs'  = psTable procSymbols'
 
     -- Check if there is another procedure with this name
     case Map.lookup name table of
         Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
                               otherPos  "first declared here:"
-        _ -> putEither $ Map.insert name (pos, LocalTable params procs retType' name) table
+        _ -> do
+            let myProc = (pos, LocalTable params' procs' retType' name)
+            let newProcs = Map.insert name myProc table
+
+            let myType = LocatedTypeName (initialPos "") (FunctionTypeName params retType)
+            let (newPtrs, newVtable) = case lookupType symbols myType of
+                    Left  _       -> (funcPtrs, vtable)
+                    Right (_, ty) -> do
+                        let index = Map.size funcPtrs
+                        let newPtrs = Map.insert name (index, ty) funcPtrs
+                        let newVtable = Map.insert index myProc vtable
+                        (newPtrs, newVtable)
+
+            putEither (ProcState newProcs newPtrs newVtable)
     where
         retType' = case retType of
-            Just retType -> liftPrimitive retType
+            Just (PrimitiveTypeName ty) -> liftPrimitive ty
             _            -> TVoid
 
 -- | Check whether there is an existing type with this name. If not, returns the checked type.

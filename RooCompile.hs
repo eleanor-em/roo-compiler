@@ -2,6 +2,7 @@
 
 module RooCompile where
 
+import Debug.Trace (trace)
 import Data.Maybe (catMaybes, fromJust)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -14,6 +15,7 @@ import SymTable
 import Oz
 import Control.Monad (when)
 import RooPrettyPrinter (prettyStatement, prettyExpr)
+import qualified Data.Map.Strict as Map
 
 -- | effectively now the global state 
 data BlockState = BlockState
@@ -81,6 +83,32 @@ addInstrsRaw instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
+generateVtable :: RootTable -> [Text]
+generateVtable table = mconcat
+    [ [ vTableLabel <> ":" ]
+    , mconcat branches
+    , map addIndent (ozBranch "__vtable_end")
+    , mconcat labels
+    , [ "__vtable_end:" ]
+    , map addIndent $ mconcat
+        [ ozWriteString "invalid virtual pointer: "
+        , ozReadVPtr (Register 0)
+        , ozWriteInt (Register 0)
+        , ozWriteString "\\n(exiting)"
+        , [ "halt" ] ] ]
+    where
+        (branches, labels) = unzip $ map extractVtableData (Map.toAscList (rootVtable table))
+        extractVtableData (index, (_, locals)) = (branch, target)
+            where
+                procName = localProcName locals
+                label  = "__vptr_" <> procName
+                branch = map addIndent (ozCmpBranchVPtr index label)
+                target = mconcat
+                    [ [ label <> ":" ]
+                    , map addIndent (ozCall (makeProcLabel procName))
+                    , [ addIndent "return" ] ]
+
+
 compileProgram :: Program -> ([AnalysisError], [Text])
 compileProgram program@(Program _ _ procs) = do
     let (errs, symbols) = getAllSymbols program
@@ -90,14 +118,14 @@ compileProgram program@(Program _ _ procs) = do
     else do
         -- Compile all the procedures in our program.
         let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
-        let output = addHeader (blockInstrs result)
+        let output = addHeader symbols (blockInstrs result)
 
         let allErrs = errs <> errs'
 
         (allErrs, separate output)
     where
-        separate  = map (<> "\n")
-        addHeader = (["call proc_main", "halt"] <>)
+        separate = map (<> "\n")
+        addHeader symbols = ((["call proc_main", "halt"] <> generateVtable symbols) <>)
 
 compileProc :: Procedure -> EitherState BlockState ()
 compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
@@ -185,23 +213,37 @@ compileCall locals ident args = do
             let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
             (registers, final) <- runEither (mapM compileArg typedArgs') next
 
-            if isTailCall current then do
-                let stores = concatMap (uncurry ozStore)
-                                       (zip (map StackSlot [0..]) (catMaybes registers))
+            -- handle the case where it's a HOF
+            case lookupProc (blockSyms current) (fromIdent ident) of
+                Just _ ->
+                    if isTailCall current then do
+                        let stores = concatMap (uncurry ozStore)
+                                            (zip (map StackSlot [0..]) (catMaybes registers))
 
-                let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
-                return (blockInstrs final <> map addIndent instrs, retType)
+                        let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
+                        return (blockInstrs final <> map addIndent instrs, retType)
 
-            else do
-                let moves = concatMap (uncurry ozMove)
-                                      (zip (map Register [0..]) (catMaybes registers))
+                    else do
+                        let moves = concatMap (uncurry ozMove)
+                                            (zip (map Register [0..]) (catMaybes registers))
 
-                let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
-                return (blockInstrs final <> map addIndent instrs, retType)
+                        let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
+                        return (blockInstrs final <> map addIndent instrs, retType)
+                
+                Nothing -> do
+                    (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
+
+                    case ptr of 
+                        Just ptr -> do
+                            let moves = concatMap (uncurry ozMove)
+                                            (zip (map Register [0..]) (catMaybes registers))
+                            let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
+                            return (blockInstrs final' <> map addIndent instrs, retType)
+                        Nothing -> error "internal error: did not catch all HOF call cases :("
 
             where
                 -- | Compile the argument, loading the address for refsand the value for vals
-                compileArg (TypedExpr _ (ELvalue lvalue), ProcSymbol (RefSymbol _) _ _ _)
+                compileArg (TypedExpr _ (ELvalue lvalue), RefSymbol _)
                     = loadAddress locals lvalue
                 compileArg (TypedExpr _ expr, _)
                     = compileExpr locals (simplifyExpression expr)
@@ -407,7 +449,7 @@ compileStatement locals st@(SReturn expr) = do
         else do
             let compile = do
                 register <- compileExpr locals (simplifyExpression expr')
-                (addInstrs .ozMove ozReturnRegister) <?> register
+                (addInstrs . ozMove ozReturnRegister) <?> register
             -- Tail call optimisation :-)
             case expr' of
                 EFunc target _ ->
@@ -499,9 +541,18 @@ loadLvalue locals lvalue = do
     current <- getEither
 
     case analyseLvalue (blockSyms current) locals lvalue of
-        Left errs -> do
-            addErrors errs
-            return Nothing
+        Left errs -> case lvalue of
+            LId (Ident _ name) ->
+                case Map.lookup name (rootFuncPtrs $ blockSyms current) of
+                    Just (procIndex, _) ->
+                        pure <$> loadConst (LitInt procIndex)
+
+                    Nothing -> do 
+                        addErrors errs
+                        return Nothing
+            _ -> do
+                addErrors errs
+                return Nothing
         Right sym -> loadSymbol locals sym
 
 
@@ -636,7 +687,6 @@ storeLvalue locals lvalue register = do
     addErrorsOr (analyseLvalue (blockSyms current) locals lvalue)
                 (\sym -> storeSymbol locals sym register)
 
--- TODO: refactor loads as below
 storeSymbol :: LocalTable -> TypedLvalue -> Register -> EitherState BlockState ()
 storeSymbol locals lval register = do
     let offset = lvalueOffset lval
@@ -680,3 +730,6 @@ makeProcLabel = ("proc_" <>)
 
 makeProcTailLabel :: Text -> Text
 makeProcTailLabel name = "proc_" <> name <> "_loaded"
+
+vTableLabel :: Text
+vTableLabel = "__vtable"

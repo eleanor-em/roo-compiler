@@ -132,7 +132,7 @@ pFunction = do
         pos <- sourcePos
         reserved "procedure"
         header <- pHeader
-        retType <- optionMaybe (reservedOp "->" *> pPrimitiveType)
+        retType <- optionMaybe (PrimitiveTypeName <$> (reservedOp "->" *> pPrimitiveType))
         varDecls <- many pVarDecl
         body <- braces (many1 pStatement)
         return $ Procedure pos header retType varDecls body
@@ -161,6 +161,8 @@ pTypeNameInner =
         AliasTypeName <$> pIdent
     <|>
         PrimitiveTypeName <$> pPrimitiveType
+    <|> 
+        pFunctionType
 
 -- | Parses a primitive node and returns a PrimitiveType node if accepted
 pPrimitiveType :: Parser PrimitiveType
@@ -168,6 +170,13 @@ pPrimitiveType =
         reserved "boolean" $> RawBoolType
     <|>
         reserved "integer" $> RawIntType
+
+pFunctionType :: Parser TypeName
+pFunctionType = do
+    reserved "procedure"
+    params <- parens (pFormalParam `sepBy` comma)
+    retType <- optionMaybe (reservedOp "->" *> pPrimitiveType)
+    return $ FunctionTypeName params (PrimitiveTypeName <$> retType)
 
 -- | Parses a positive integer and returns an Int node if accepted 
 pPositiveInt :: Parser Int
@@ -210,10 +219,15 @@ pFormalTypeParam = liftA2 TypeParam pTypeName pIdent
 -- | Parses a formal val type paramter and returns a Parameter node if accepted   
 pFormalValParam :: Parser Parameter
 pFormalValParam = do
-    pos <- sourcePos
-    typename <- pPrimitiveType
-    reserved "val"
-    ValParam (LocatedTypeName pos $ PrimitiveTypeName typename) <$> pIdent
+        pos <- sourcePos
+        typename <- pPrimitiveType
+        reserved "val"
+        ValParam (LocatedTypeName pos $ PrimitiveTypeName typename) <$> pIdent
+    <|> do
+        -- Function types are always value (they are really references, but in a roundabout manner)
+        pos <- sourcePos
+        typename <- pFunctionType
+        ValParam (LocatedTypeName pos typename) <$> pIdent
 
 -- | Parses a variable declaration and returns a VarDecl node if accepted
 pVarDecl :: Parser VarDecl

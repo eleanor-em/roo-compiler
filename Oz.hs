@@ -10,7 +10,7 @@ ozReturnRegister :: Register
 ozReturnRegister = Register 0
 
 ozExtraRegisters :: Int -> Register
-ozExtraRegisters offset = Register (1023 - offset)
+ozExtraRegisters offset = Register (1022 - offset)
 
 convertBool :: Bool -> Text
 convertBool False = "0"
@@ -18,8 +18,21 @@ convertBool True = "1"
 
 ozPushStackFrame :: Int -> [Text]
 ozPushStackFrame n = ["push_stack_frame " <> tshow n]
+
 ozPopStackFrame :: Int -> [Text]
 ozPopStackFrame n = ["pop_stack_frame " <> tshow n]
+
+ozSetVPtr :: Register -> [Text]
+ozSetVPtr = ozMove (Register 1023)
+
+ozReadVPtr :: Register -> [Text]
+ozReadVPtr = flip ozMove (Register 1023)
+
+ozCmpBranchVPtr :: Int -> Text -> [Text]
+ozCmpBranchVPtr index label = mconcat
+    [ ozIntConst (Register 1022) index
+    , ozEq (Register 1021) (Register 1022) (Register 1023)
+    , ozBranchOnTrue (Register 1021) label ]
 
 ozLoad :: Register -> StackSlot -> [Text]
 ozLoad register location
