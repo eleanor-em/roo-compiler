@@ -245,5 +245,7 @@ symbolsDecl symbols (VarDecl ty idents) = do
                 let loc = location procSymbols
                 let table = psTable procSymbols
                 putEither (procSymbols
-                    { psTable = Map.insert name (ProcSymbol (ValSymbol ty) (StackSlot loc) pos name) table
+                    { psTable = Map.insert name
+                                           (ProcSymbol (ValSymbol ty) (StackSlot loc) pos name)
+                                           table
                     , location = loc + sizeof ty })

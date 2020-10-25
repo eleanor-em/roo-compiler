@@ -142,7 +142,8 @@ typecheckExpression table locals expr@(EFunc func args) = do
     (_, _, ty) <- typecheckCall table locals func args
     return $ TypedExpr ty expr
 
-typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr] -> Either [AnalysisError] ([TypedExpr], [ProcSymbol], Type)
+typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
+                           -> Either [AnalysisError] ([TypedExpr], [ProcSymbol], Type)
 typecheckCall table locals (Ident pos name) args = do
     (targetPos, targetProc) <- unwrapOr (lookupProc table name)
                                         (Left $ errorPos pos $ "unknown procedure `" <> name <> "`")
@@ -312,7 +313,9 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
 
                     let pos = locate indexExpr
                     index <- if sizeof ty /= 1 then
-                        return $ EBinOp BinTimes (LocatedExpr pos (EConst (LitInt (sizeof ty)))) indexExpr
+                        return $ EBinOp BinTimes
+                                        (LocatedExpr pos (EConst (LitInt (sizeof ty))))
+                                        indexExpr
                     else
                         return $ simplifyExpression (fromLocated indexExpr)
 
@@ -329,7 +332,8 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
 
 analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
     recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
-                       (Left $ errorPos recPos $ "in statement: unknown variable `" <> recName <> "`")
+                       (Left $ errorPos recPos $ "in statement: unknown variable `"
+                                              <> recName <> "`")
 
     let ty = rawSymType recSym
 
@@ -364,18 +368,27 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
                         Just (Field _ offset innerTy) -> do
                             let pos = locate indexExpr
                             index <- if sizeof ty /= 1 then
-                                return $ EBinOp BinTimes (LocatedExpr pos (EConst (LitInt (sizeof ty)))) indexExpr
+                                return $ EBinOp BinTimes
+                                                (LocatedExpr pos (EConst (LitInt (sizeof ty))))
+                                                indexExpr
                             else
                                 return $ simplifyExpression (fromLocated indexExpr)
 
                             return $ symToTypedLvalue
-                                (ProcSymbol (cons sym innerTy) (symLocation sym) pos (arrName <> "[]" <> fldName))
-                                (EBinOp BinPlus (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
-                                                (LocatedExpr pos index))
-                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name `" <> fldName <> "`"
+                                (ProcSymbol (cons sym innerTy)
+                                            (symLocation sym)
+                                            pos
+                                            (arrName <> "[]" <> fldName))
+                                (EBinOp BinPlus
+                                        (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
+                                        (LocatedExpr pos index))
+                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name `"
+                                                   <> fldName <> "`"
 
-                ty -> Left $ errorPos arrPos $ "expected array of records, found `" <> tshow ty <> "`"
-        Nothing  -> Left $ errorPos arrPos $ "in expression: unknown variable `" <> arrName <> "`"
+                ty -> Left $ errorPos arrPos $ "expected array of records, found `"
+                                            <> tshow ty <> "`"
+        Nothing  -> Left $ errorPos arrPos $ "in expression: unknown variable `"
+                                          <> arrName <> "`"
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol

@@ -172,10 +172,11 @@ compileCall locals ident args = do
             let moves = concatMap (uncurry ozMove)
                                   (zip (map Register [0..]) (catMaybes registers))
 
-            return (blockInstrs final <> map addIndent (moves <> ozCall (makeProcLabel (fromIdent ident))), retType)
+            return (blockInstrs final
+                 <> map addIndent (moves <> ozCall (makeProcLabel (fromIdent ident))), retType)
 
             where
-                -- | Compile the argument, loading the address for ref types and the value for val types
+                -- | Compile the argument, loading the address for refsand the value for vals
                 compileArg (TypedExpr _ (ELvalue lvalue), ProcSymbol (RefSymbol _) _ _ _)
                     = loadAddress locals lvalue
                 compileArg (TypedExpr _ expr, _)
@@ -235,8 +236,8 @@ compileStatement locals st@(SRead lvalue) = do
             TInt  -> addInstrs ozReadInt
             TBool -> addInstrs ozReadBool
             _     -> do
-                -- TODO: error with note
-                let err  = "expecting `integer` or `boolean` after `read`, found `" <> tshow ty <> "`" in
+                let err = "expecting `integer` or `boolean` on RHS of `read`, found `"
+                       <> tshow ty <> "`" in
                     addErrors $ errorPos (lvaluePos sym) err
 
         storeLvalue locals lvalue (Register 0)
@@ -256,8 +257,9 @@ compileStatement locals (SIf expr statements) = do
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
         case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
-                                                        ("`if` condition is always " <> tshowBool val)
+            EConst (LitBool val) -> addErrors $
+                warnPos (locate expr)
+                        ("`if` condition is always " <> tshowBool val)
             _ -> pure ()
 
         -- get the register where true/false is stored + the current state after compilation
@@ -288,8 +290,9 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
         case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
-                                                        ("`if` condition is always " <> tshowBool val)
+            EConst (LitBool val) -> addErrors $
+                warnPos (locate expr)
+                        ("`if` condition is always " <> tshowBool val)
             _ -> pure ()
 
         -- get the register where true/false is stored + the current state after compilation
@@ -327,12 +330,14 @@ compileStatement locals (SWhile expr statements) = do
 
     addErrorsOr (analyse symbols) $ \expr' -> do 
         case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $ warnPos (locate expr)
-                                                        ("`while` condition is always " <> tshowBool val)
+            EConst (LitBool val) -> addErrors $
+                warnPos (locate expr)
+                        ("`while` condition is always " <> tshowBool val)
             _ -> pure ()
 
         let conditionLvals = lvaluesOf (fromLocated expr)
-        let nonModifiedLvals = filter (\lval -> not (any (modifiesLvalue lval) statements)) conditionLvals
+        let nonModifiedLvals = filter (\lval -> not (any (modifiesLvalue lval) statements))
+                                      conditionLvals
 
         when (length nonModifiedLvals == length conditionLvals)
              (addErrors $ warnPos
@@ -373,7 +378,8 @@ compileStatement locals st@(SReturn expr) = do
 
         if ty /= ty' then
             addErrors $ errorPos (locate expr)
-                                 ("expecting `" <> tshow ty' <> "` on RHS of `return`, found `" <> tshow ty <> "`")
+                                 ("expecting `" <> tshow ty' <> "` on RHS of `return`, found `"
+                                                <> tshow ty <> "`")
         else do
             register <- compileExpr locals (simplifyExpression expr')
             (addInstrs .ozMove ozReturnRegister) <?> register
