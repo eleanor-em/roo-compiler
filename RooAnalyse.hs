@@ -272,6 +272,9 @@ simplifyExpression expr = expr
 data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
                  | TypedValLvalue Type StackSlot Expression Text SourcePos
 
+instance Show TypedLvalue where
+    show lval = show (lvalueName lval) <> " (" <> show (lvalueType lval) <> ")"
+
 lvalueType :: TypedLvalue -> Type
 lvalueType (TypedRefLvalue ty _ _ _ _) = ty
 lvalueType (TypedValLvalue ty _ _ _ _) = ty

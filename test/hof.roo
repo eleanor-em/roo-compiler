@@ -1,0 +1,47 @@
+array[10] integer array_t;
+
+procedure main ()
+    array_t arr;
+    integer i;
+{
+    while i < 10 do
+        arr[i] <- i;
+        i <- i + 1;
+    od
+
+    call map(square, arr, arr);
+    call for_each(print_sep, arr);
+
+    writeln "";
+}
+
+procedure print_sep (integer val x)
+{
+    write x;
+    write " ";
+}
+
+procedure for_each (procedure (integer val x) consumer, array_t arr)
+    integer i;
+{
+    while i < 10 do
+        call consumer(arr[i]);
+        i <- i + 1;
+    od
+}
+
+procedure map (procedure (integer val x) -> integer unary_op, array_t in, array_t out)
+    integer i;
+    integer x;
+{
+    while i < 10 do
+        x <- unary_op(in[i]);
+        out[i] <- x;
+        i <- i + 1;
+    od
+}
+
+procedure square (integer val x) -> integer
+{
+    return x * x;
+}

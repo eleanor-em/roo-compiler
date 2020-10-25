@@ -1,0 +1,7 @@
+procedure ndigit (integer val a, integer val n) -> integer
+    integer x;
+{
+    x <- pow(10, n);
+    x <- mod(a / x, 10);
+    return abs(x);
+}
