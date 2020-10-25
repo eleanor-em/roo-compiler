@@ -1,0 +1,19 @@
+procedure main ()
+{
+    writeln exp(2, 8);
+}
+
+procedure exp(integer val base, integer val x) -> integer
+{
+    return exp'(base, x, 1);
+}
+
+procedure exp' (integer val base, integer val x, integer val acc) -> integer
+{
+    if x = 0 then
+        return acc;
+    else
+        acc <- acc * base;
+        return exp'(base, x - 1, acc);
+    fi
+}
