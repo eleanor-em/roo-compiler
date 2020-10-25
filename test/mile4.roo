@@ -1,0 +1,12 @@
+# Milestone 4 test case:
+# Call by-value arguments and procedure calls 
+
+procedure main ()
+{   call f(8, false);
+    write "\n";
+}
+
+procedure f(integer val x, boolean val y)
+{   write(x > 4 or y);
+}
+

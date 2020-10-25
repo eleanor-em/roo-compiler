@@ -1,0 +1,9 @@
+# Milestone 1 test case:
+# Expressions and the write statement 
+
+procedure main () 
+{   writeln "     Hello darlings!";
+    writeln " ";
+    write "\n";
+    writeln 9 = 4 + 5 and true;
+}

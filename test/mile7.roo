@@ -1,0 +1,53 @@
+# Milestone 7 test case:
+# Arrays and records
+
+record { integer x
+       ; integer y
+       ; boolean z
+       } r;
+array [2] r record_arr;
+
+procedure main ()
+    boolean same;
+    integer n;
+    r my_record;
+    record_arr d, e;
+{
+    my_record.x <- 42;
+    my_record.y <- 0;
+    write "Give us a Boolean: ";
+    read my_record.z;
+
+    n <- my_record.x;
+    d[0].x <- n;
+    d[0].y <- d[0].x;
+    d[0].y <- 0;
+    d[0].z <- my_record.z;
+   
+    e[1].x <- d[0].x;
+    e[1].z <- my_record.z;
+
+    call match(my_record, e[1], same);
+    if same then
+        writeln "Looks good";
+    else
+        writeln "Error comparing records";
+    fi
+}
+
+procedure match(r rec1, r rec2, boolean out)
+{
+    writeln rec1.x;
+    writeln rec1.y;
+    writeln rec1.z;
+    writeln rec2.x;
+    writeln rec2.y;
+    writeln rec2.z;
+
+    if rec1.x = rec2.x and rec1.y = rec2.y and rec1.z = rec2.z then
+        out <- true;
+    else
+        out <- false;
+    fi
+}
+

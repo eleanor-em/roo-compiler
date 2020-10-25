@@ -1,0 +1,11 @@
+# Milestone 2 test case:
+# Assignment and read statements
+
+procedure main ()
+integer x;
+{   x <- 42;
+    write "An integer, please: ";
+    read x;
+    x <- x + 1;
+    writeln (x + x);
+}
