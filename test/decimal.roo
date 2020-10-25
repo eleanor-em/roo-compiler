@@ -1,48 +1,61 @@
 # Big-int arithmetic in Roo
 # by Eleanor McMurtry
 
-array[20] integer bigint_t;
+array[40] integer bigint_t;
 array[10] boolean other;
 
-procedure mod (integer val x, integer val n, integer result)
+procedure mod (integer val x, integer val n) -> integer
+    integer result;
 {
     result <- x - x / n * n;
     if result = n then
         result <- 0;
     fi
+
     while result < 0 do
         result <- result + n;
     od
+
+    return result;
 }
 
-procedure pow (integer val base, integer val exponent, integer result)
+procedure pow (integer val base, integer val exponent) -> integer
     integer i;
+    integer result;
 {
-    result <- base;
+    result <- 1;
     while i < exponent do
         result <- result * base;
         i <- i + 1;
     od
+
+    return result;
 }
 
-procedure ndigit (integer val a, integer val n, integer result)
-    integer x;
+procedure abs(integer val x) -> integer
 {
-    call pow(10, n, x);
-    result <- a / x;
-    call mod(result, 10, x);
-    result <- x;
-    if result < 0 then
-        result <- result * -1;
+    if x < 0 then
+        return -x;
+    else
+        return x;
     fi
 }
 
-procedure length (bigint_t a, integer result)
+procedure ndigit (integer val a, integer val n) -> integer
+    integer x;
+{
+    x <- pow(10, n);
+    x <- mod(a / x, 10);
+    return abs(x);
+}
+
+procedure length (bigint_t a) -> integer
     integer i;
     boolean done;
+    integer result;
 {
     result <- 0;
-    i <- 19;
+    i <- 40 - 1;
     done <- false;
 
     while not done and i >= 0 do
@@ -55,9 +68,9 @@ procedure length (bigint_t a, integer result)
     od
 
     if i = 0 then
-        result <- 20;
+        return 40;
     else
-        result <- 20 - result;
+        return 40 - result;
     fi
 }
 
@@ -66,10 +79,11 @@ procedure add (bigint_t a, bigint_t b, bigint_t c)
     integer i;
     integer result;
 {
-    while i < 20 do
+    while i < 40 do
         result <- a[i] + b[i] + carry;
-        call mod(result, 10, c[i]);
+        c[i] <- mod(result, 10);
         carry <- result / 10;
+
         i <- i + 1;
     od
 }
@@ -81,30 +95,27 @@ procedure compl(bigint_t x, bigint_t c)
 {
     one[0] <- 1;
 
-    while i < 20 do
+    while i < 40 do
         c[i] <- 9 - x[i];
         i <- i + 1;
     od
 
-    call copy(c, c');
-    call add(one, c', c);
+    call add(one, c, c);
 }
 
 procedure sub(bigint_t a, bigint_t b, bigint_t c)
     bigint_t c';
 {
     call compl(b, c);
-    call copy(c, c');
-    call add(a, c', c);
+    call add(a, c, c);
 }
 
 procedure shl(bigint_t x, integer val n, bigint_t result)
     integer i;
+    bigint_t copy;
 {
-    if n = 0 then
-        result <- x;
-    else
-        i <- 19;
+    if n > 0 then
+        i <- 40 - 1;
         while i >= 0 do
             if i >= n then
                 result[i] <- x[i - n];
@@ -116,6 +127,8 @@ procedure shl(bigint_t x, integer val n, bigint_t result)
         od
 
         result[0] <- 0;
+    else
+        result <- x;
     fi
 }
 
@@ -125,8 +138,8 @@ procedure shr(bigint_t x, integer val n, bigint_t result)
     if n = 0 then
         result <- x;
     else
-        while i < 20 do
-            if i <= 20 - n - 1 then
+        while i < 40 do
+            if i <= 40 - n - 1 then
                 result[i] <- x[i + n];
             else
                 result[i] <- 0;
@@ -135,57 +148,22 @@ procedure shr(bigint_t x, integer val n, bigint_t result)
             i <- i + 1;
         od
 
-        result[19] <- 0;
+        result[40 - 1] <- 0;
     fi
 }
 
-procedure is_neg(bigint_t x, boolean result)
+procedure is_neg(bigint_t x) -> boolean
 {
-    result <- x[19] >= 5;
+    return x[40 - 1] >= 5;
 }
 
 procedure from_int(integer val x, bigint_t result)
     integer i;
 {
-    while i < 20 do
-        call ndigit(x, i, result[i]);
+    while i < 10 do
+        result[i] <- ndigit(x, i);
         i <- i + 1;
     od
-}
-
-procedure copy(bigint_t x, bigint_t x')
-    integer i;
-{
-    while i < 20 do
-        x'[i] <- x[i];
-        i <- i + 1;
-    od
-}
-
-procedure to_int(bigint_t x, integer result)
-    integer i;
-    integer temp;
-    bigint_t x';
-    boolean flag;
-{
-    result <- 0;
-
-    call is_neg(x, flag);
-    if flag then
-        call compl(x, x');
-    else
-        call copy(x, x');
-    fi
-
-    while i < 20 do
-        call pow(10, i, temp);
-        result <- result + temp * x[i];
-        i <- i + 1;
-    od
-
-    if flag then
-        result <- result * -1;
-    fi
 }
 
 procedure mul (bigint_t a, bigint_t b, bigint_t result)
@@ -193,73 +171,120 @@ procedure mul (bigint_t a, bigint_t b, bigint_t result)
     integer carry;
     boolean flag;
     bigint_t x;
-    integer i, j;
+    integer digit, j;
     integer aa, bb;
     bigint_t c;
     integer temp;
     bigint_t temp_b;
     bigint_t x';
+    bigint_t zero;
 {
-    call is_neg(a, flag);
-    if flag then
+    if is_neg(a) then
         call compl(a, a);
         neg <- not neg;
     fi
 
-    call is_neg(b, flag);
-    if flag then
-        call copy(b, temp_b);
-        call compl(temp_b, b);
+    if is_neg(b) then
+        call compl(b, b);
         neg <- not neg;
     fi
 
     carry <- 0;
-    call from_int(0, x);
-
-    while i < 20 do
-        bb <- b[i];
+    call from_int(0, zero);
+    x <- zero;
+    result <- zero;
+    
+    while digit < 40 do
+        bb <- b[digit];
         j <- 0;
-        while j < 20 do
+        c <- zero;
+        while j < 40 do
             aa <- a[j];
             temp <- aa * bb + carry;
-            call mod(temp, 10, c[j]);
+            c[j] <- mod(temp, 10);
             carry <- temp / 10;
             j <- j + 1;
         od
-        call shl(c, i, temp_b);
-        call copy(x, x');
-        call add(x', temp_b, x);
-        i <- i + 1;
+
+        call shl(c, digit, temp_b);
+        call add(x, temp_b, x);
+        digit <- digit + 1;
     od
 
     if neg then
-        call copy(x, x');
-        call compl(x', x);
+        call compl(x, x);
     fi
-    
+
     result <- x;
 }
 
 procedure print(bigint_t x)
     integer i;
+    boolean has_started;
 {
-    i <- 19;
+    if is_neg(x) then
+        write "-";
+        call compl(x, x);
+    fi
+
+    i <- 40 - 1;
     while i >= 0 do
-        write x[i];
+        if x[i] != 0 then
+            has_started <- true;
+        fi
+        if has_started then
+            write x[i];
+        fi
         i <- i - 1;
     od
-    writeln "";
+
+    if not has_started then
+        write 0;
+    fi
+}
+
+procedure factorial(integer val n, bigint_t result)
+    bigint_t temp, next;
+{
+    if n <= 1 then
+        call from_int(1, result);
+    else
+        call from_int(n, temp);
+        call factorial(n - 1, next);
+        call mul(temp, next, result);
+    fi
 }
 
 procedure main()
     bigint_t a, b, c;
+    integer x;
 {
-    call from_int(28375632, a);
-    call from_int(38256263, b);
-
+    call from_int(123456789, a);
+    b <- a;
     call add(a, b, c);
-    call print(c);
     
-    call mul(a, b, c);
+    call print(a);
+    write " + ";
+    call print(b);
+    write " = ";
     call print(c);
+    writeln "";
+    
+    call from_int(123456789, a);
+    call from_int(123456789, b);
+    call mul(a, b, c);
+
+    call print(a);
+    write " * ";
+    call print(b);
+    write " = ";
+    call print(c);
+    writeln "";
+
+    x <- 25;
+    call factorial(x, a);
+    write x;
+    write "! = ";
+    call print(a);
+    writeln "";
 }
