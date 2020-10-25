@@ -111,20 +111,20 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
                     []
 
             addInstrsRaw $ ["\n" <> makeProcLabel procName <> ":"]
-                        <> addComment "prologue"
-            addInstrs (prologue <> addComment "load args" <> argPrologue
-                                <> addComment "init locals" <> localPrologue)
+                        <> makeComment "prologue"
+            addInstrs (prologue <> makeComment "load args" <> argPrologue
+                                <> makeComment "init locals" <> localPrologue)
 
             mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements
 
-            addInstrs (addComment "epilogue" <> epilogue <> ["return"])
+            addInstrs (makeComment "epilogue" <> epilogue <> ["return"])
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
 commentStatement :: Statement -> EitherState BlockState ()
 commentStatement (SWhile _ _) = error "commentStatement: cannot handle `while`"
 commentStatement SIfElse {} = error "commentStatement: cannot handle `if...else`"
-commentStatement st = addInstrs $ addComment $ prettyStatement 0 st
+commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
 
 -- | Allows us to correctly comment `write` and `writeln` statements
 --   Special case to handle string literals.
@@ -212,7 +212,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
             addErrors $ errorPos (locate expr)
                                  ("cannot assign `" <> tshow ty' <> "` to `" <> tshow ty <> "`")
         else
-            case fromLocated expr of
+            case expr' of
                 ELvalue lvalue' -> do
                     addErrorsOr (analyseLvalue symbols locals lvalue')
                                 (\sym' -> copyContents sym sym' (sizeof ty'))
@@ -248,7 +248,7 @@ compileStatement locals st@(SCall ident args) = do
 
 -- dealing with if statements  
 compileStatement locals (SIf expr statements) = do 
-    addInstrs $ addComment ("if " <> prettyExpr (fromLocated expr) <> " then")
+    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
 
     current <- getEither
     let symbols = blockSyms current
@@ -264,7 +264,7 @@ compileStatement locals (SIf expr statements) = do
         register <- compileExpr locals (simplifyExpression expr')
         addInstrs (ozBranchOnFalse (fromJust register) fiLabel) 
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
-        addInstrs $ addComment "fi"
+        addInstrs $ makeComment "fi"
         addInstrsRaw [fiLabel <> ":"]
     where
         analyse symbols = do 
@@ -279,7 +279,7 @@ compileStatement locals (SIf expr statements) = do
 
 -- dealing with if/Else statements  
 compileStatement locals (SIfElse expr ifStatements elseStatements) = do 
-    addInstrs $ addComment ("if " <> prettyExpr (fromLocated expr) <> " then")
+    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
 
     current <- getEither
     let symbols = blockSyms current
@@ -300,10 +300,10 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) ifStatements 
         -- now goto after the if block 
         addInstrs (ozBranch afterLabel)
-        addInstrs $ addComment "else"
+        addInstrs $ makeComment "else"
         addInstrsRaw [elseLabel <> ":"]
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) elseStatements
-        addInstrs $ addComment "fi"
+        addInstrs $ makeComment "fi"
         addInstrsRaw [afterLabel <> ":"]
     where
         analyse symbols = do 
@@ -318,7 +318,7 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
 
 -- dealing with while statements  
 compileStatement locals (SWhile expr statements) = do 
-    addInstrs $ addComment ("while " <> prettyExpr (fromLocated expr) <> " do")
+    addInstrs $ makeComment ("while " <> prettyExpr (fromLocated expr) <> " do")
 
     current <- getEither
     let symbols = blockSyms current
@@ -348,7 +348,7 @@ compileStatement locals (SWhile expr statements) = do
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
         -- go to start 
         addInstrs (ozBranch beginLabel)
-        addInstrs $ addComment "od"
+        addInstrs $ makeComment "od"
         addInstrsRaw [falseLabel <> ":"]
         
     where
@@ -435,17 +435,17 @@ compileExpr locals (EFunc func args) = do
 
     when (usedRegisters >= 0) (do
         -- Save the current registers
-        addInstrs $ addComment "push registers"
+        addInstrs $ makeComment "push registers"
         mapM_ (pushRegister . Register) [0..usedRegisters])
 
-    addInstrs $ addComment $ "call " <> fromIdent func
+    addInstrs $ makeComment $ "call " <> fromIdent func
     result <- useRegister
     returned <- compileCall locals func args
     addInstrs $ ozMove result ozReturnRegister
 
     when (usedRegisters >= 0) (do
         -- Save the current registers
-        addInstrs $ addComment "pop registers"
+        addInstrs $ makeComment "pop registers"
         mapM_ (popRegister . Register) [0..usedRegisters])
     
     case returned of
@@ -630,15 +630,8 @@ addIndent str
     | T.head str == '#' = str
     | otherwise         = "    " <> str
 
-addComment :: Text -> [Text]
-addComment str = ["# " <> T.strip str]
-
-addCommentTo :: Text -> [Text] -> [Text]
-addCommentTo str = (["# " <> T.strip str] <>)
+makeComment :: Text -> [Text]
+makeComment str = ["# " <> T.strip str]
 
 makeProcLabel :: Text -> Text
 makeProcLabel = ("proc_" <>)
-
-exprToLvalue :: Expression -> Maybe Lvalue 
-exprToLvalue (ELvalue lvalue) = Just lvalue 
-exprToLvalue _ = Nothing 
