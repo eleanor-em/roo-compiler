@@ -105,7 +105,7 @@ data ProcSymbolState = ProcSymbolState
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
-getAllSymbols (Program records arrays procs) = do
+getAllSymbols (Program records arrays procs _) = do
     let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
     let symbols = RootTable records' Map.empty
 

@@ -21,7 +21,7 @@ import Text.Parsec.Pos (initialPos)
 --     1. a list of records 
 --     2. a list of array type definitions 
 --     3. a list of procedures   
-data Program = Program [Record] [ArrayType] [Procedure]
+data Program = Program [Record] [ArrayType] [Procedure] [Function]
     deriving (Show, Eq)
 
 -- | A Record node consists of:
@@ -45,6 +45,9 @@ data ArrayType = ArrayType Int LocatedTypeName Ident
 --     2. a list of local variable declarations
 --     3. a list of statements 
 data Procedure = Procedure SourcePos ProcHeader [VarDecl] [Statement]
+    deriving (Show, Eq)
+
+data Function = Function SourcePos ProcHeader PrimitiveType [VarDecl] [Statement]
     deriving (Show, Eq)
 
 -- | A Procedure Header node consists of:
@@ -105,6 +108,7 @@ data Statement
     | SIf LocatedExpr [Statement]
     | SIfElse LocatedExpr [Statement] [Statement]
     | SWhile LocatedExpr [Statement]
+    | SReturn LocatedExpr
     deriving (Show, Eq)
 
 -- | An Expression node can be one of:
@@ -117,6 +121,7 @@ data Expression
     | EConst Literal
     | EBinOp BinOp LocatedExpr LocatedExpr
     | EUnOp UnOp LocatedExpr
+    | EFunc Ident [LocatedExpr]
     deriving (Show, Eq)
 
 liftExpr :: Expression -> LocatedExpr

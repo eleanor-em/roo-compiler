@@ -54,7 +54,7 @@ addInstrsRaw instrs = do
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
 compileProgram :: Program -> ([AnalysisError], [Text])
-compileProgram program@(Program _ _ procs) = do
+compileProgram program@(Program _ _ procs _) = do
     let (errs, symbols) = getAllSymbols program
 
     if not (hasMain symbols) then
@@ -85,6 +85,7 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
             let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
                                                         (map Register [0..])
 
+            -- Initiatlise local variables to 0
             let paramCount = length $ localParams locals
             let localPrologue = ozIntConst (Register 0) 0
                              <> concatMap ((`ozStore` Register 0) . StackSlot)
@@ -92,7 +93,8 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ statements) = do
 
             addInstrsRaw $ ["\n" <> makeProcLabel procName <> ":"]
                         <> addComment "prologue"
-            addInstrs (prologue <> argPrologue <> localPrologue)
+            addInstrs (prologue <> addComment "load args" <> argPrologue
+                                <> addComment "init locals" <> localPrologue)
 
             mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements
 

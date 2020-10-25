@@ -13,7 +13,7 @@ module RooPrettyPrinter (prettyPrint, prettyBinOp, prettyStatement, prettyExpr) 
 
 import Common
 
-import Data.Text (Text)
+import Data.Text (intercalate, Text)
 import qualified Data.Text as T
 
 import RooAst
@@ -30,11 +30,12 @@ endline = ";\n"
 
 -- | Take the AST of a program and return a pretty print formatted string 
 prettyPrint :: Program -> Text
-prettyPrint (Program records arrays procs) = mconcat
+prettyPrint (Program records arrays procs funcs) = mconcat
     [ foldMap prettyRecord records
     , foldMap prettyArrayDecl arrays
     , if not (null records && null arrays) then "\n" else ""
-    , T.intercalate "\n" (map prettyProcedure procs) ]
+    , T.intercalate "\n" (map prettyProcedure procs)
+    , T.intercalate "\n" (map prettyFunction funcs) ]
 
 -----------------------------------
 -- Main Definitions Pretty Printers 
@@ -59,11 +60,23 @@ prettyArrayDecl (ArrayType size typeName ident) = mconcat
 prettyProcedure :: Procedure -> Text
 prettyProcedure (Procedure _ header varDecls body) = mconcat
     [ prettyHeader header
+    , "\n"
     , mconcat $ map prettyVarDecls varDecls
     , "{\n"
     , prettyAllStatements body 1
     , "}\n" ]
 
+-- | Replaces a Procedure node with its pretty-printed representation
+prettyFunction :: Function -> Text
+prettyFunction (Function _ header retType varDecls body) = mconcat
+    [ prettyHeader header
+    , " -> "
+    , prettyPrimitiveType retType
+    , "\n"
+    , mconcat $ map prettyVarDecls varDecls
+    , "{\n"
+    , prettyAllStatements body 1
+    , "}\n" ]
 -----------------------------------
 -- Type Definitions & Declarations Pretty Printers
 -----------------------------------
@@ -94,8 +107,7 @@ prettyFieldDecl (FieldDecl fieldType ident)
 prettyHeader :: ProcHeader -> Text 
 prettyHeader (ProcHeader ident headerParams) = mconcat
     [ "procedure " <> fromIdent ident  <> " "
-    , prettyParens $ T.intercalate ", " $ map prettyParameter headerParams
-    , "\n" ]
+    , prettyParens $ T.intercalate ", " $ map prettyParameter headerParams ]
 
 -- | Replaces a Parameter node with a string representation of a Parameter
 prettyParameter :: Parameter -> Text 
@@ -150,6 +162,7 @@ prettyStatement indentLevel statement
                 [ "while " <> prettyExpr (fromLocated expr) <> " do\n"
                 , prettyAllStatements body (indentLevel + 1 )
                 , indents <> "od\n" ]
+        SReturn expr -> "return " <> prettyExpr (fromLocated expr) <> endline
     where
         -- Shorthand for all of the indents we currently need
         indents = allIndents indentLevel
@@ -183,6 +196,8 @@ prettyExpr expr = prettyGetExpr expr OpNone
 prettyGetExpr :: Expression -> ParentOp -> Text
 prettyGetExpr (ELvalue lvalue) _ = prettyLvalue lvalue 
 prettyGetExpr (EConst literal) _ = prettyLiteral literal
+prettyGetExpr (EFunc (Ident _ name) args) _ = name
+    <> prettyParens(intercalate ", " (map (prettyExpr . fromLocated) args))
 
 -- | Basic binary operator case with no parent operator
 prettyGetExpr (EBinOp op lhs rhs) OpNone = T.unwords

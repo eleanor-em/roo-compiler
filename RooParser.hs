@@ -53,11 +53,12 @@ scanner = Q.makeTokenParser
     --  NOTE: we avoid the use of constants for each of these reserved keywords as they are only 
     --  used a couple times and the inclusion of constants would overcomplicate constant naming
     --  due to naming conflicts between files and modules. It's clearer (IMO) this way.
-    , Q.reservedNames   = [ "read", "write", "writeln", "call", "if", "then",
-                            "else", "fi", "procedure", "array", "record", "while",
-                            "do", "od", "integer", "boolean", "val", "true", "false" ]
-    , Q.reservedOpNames = [ "or", "and", "not", "=", "!=", "<", "<=", ">",
-                            ">=", "+", "-", "*", "/", "<-", "." ]
+    , Q.reservedNames   = [ "read", "write", "writeln", "call", "if", "then"
+                          , "else", "fi", "procedure", "array", "record", "while"
+                          , "do", "od", "integer", "boolean", "val", "true", "false"
+                          , "function", "return" ]
+    , Q.reservedOpNames = [ "or", "and", "not", "=", "!=", "<", "<=", ">"
+                          , ">=", "+", "-", "*", "/", "<-", "." ]
     , Q.caseSensitive   = True
     })
 
@@ -96,8 +97,9 @@ pProgram = do
     records <- many pRecord
     arrays <- many pArrayType
     procedures <- many1 pProcedure
+    functions <- many1 pFunction
     eof
-    return $ Program records arrays procedures
+    return $ Program records arrays procedures functions
 
 -----------------------------------
 -- Main Definition Parsing
@@ -118,7 +120,7 @@ pRecord = do
 pArrayType :: Parser ArrayType 
 pArrayType = do
         reserved "array"
-        numElems <- brackets $ pPositiveInt
+        numElems <- brackets pPositiveInt
         typeName <- pTypeName
         ident <- pIdent 
         semi
@@ -136,7 +138,20 @@ pProcedure = do
         body <- braces (many1 pStatement)
         return $ Procedure pos header varDecls body
     <?>
-        "procedure"
+        "procedure declaration"
+
+pFunction :: Parser Function
+pFunction = do
+        pos <- sourcePos
+        reserved "function"
+        header <- pHeader
+        reserved "->"
+        retType <- pPrimitiveType
+        varDecls <- many pVarDecl
+        body <- braces (many1 pStatement)
+        return $ Function pos header retType varDecls body
+    <?>
+        "function declaration"
 
 -----------------------------------
 -- Type Definitions & Declarations Helper Functions
@@ -230,7 +245,7 @@ pVarDecl =
 pAtomicStatement :: Parser Statement
 pAtomicStatement = choice
     [ pWriteStatement, pWriteLnStatement, pReadStatement
-    , pAssignStatement, pCallStatement] <* semi
+    , pAssignStatement, pCallStatement, pReturnStatement] <* semi
 
 -- | Parses an assignment statement and returns a Statement node if accepted 
 pAssignStatement :: Parser Statement
@@ -270,12 +285,15 @@ pWriteLnStatement =
 -- | Parses a call statement and returns a Statement node if accepted 
 pCallStatement :: Parser Statement
 pCallStatement =
-    reserved "call" *> (liftA2 SCall pIdent $ parens (pExpression `sepBy` comma))
+    reserved "call" *> liftA2 SCall pIdent (parens (pExpression `sepBy` comma))
 
 -- | Parses a read statement and returns a Statement node if accepted
 pReadStatement :: Parser Statement
 pReadStatement =
     SRead <$> (reserved "read" *> pLvalue)
+
+pReturnStatement :: Parser Statement
+pReturnStatement = SReturn <$> (reserved "return" *> pExpression)
 
 -- | Parses an if statement and returns a Statement node if accepted 
 pIfStatement :: Parser Statement 
@@ -324,7 +342,7 @@ pExpression =
 pFactor :: Parser LocatedExpr
 pFactor =
         choice [ parens pExpression, pStringLiteral, pIntLiteral
-               , pBoolLiteral, pNegatedExpr, pLvalueExpr ]
+               , pBoolLiteral, try pFuncCall, pNegatedExpr, pLvalueExpr ]
     <?>
         "expression"
 
@@ -380,7 +398,7 @@ pBoolLiteral =
 -- doesn't alter them -- for later injection into Oz.
 pStringLiteral :: Parser LocatedExpr
 pStringLiteral
-    = liftSourcePos $ (EConst . LitString . T.pack) <$> between quote (lexeme quote) pStringLitChars
+    = liftSourcePos $ EConst . LitString . T.pack <$> between quote (lexeme quote) pStringLitChars
     where
         pStringLitChars = concat <$> many (choice
             [ char '\\' *> choice [
@@ -395,6 +413,9 @@ pStringLiteral
 pEscapeSequence :: Char -> Parser String
 pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
     <?> "escape sequence (\\\", \\\\, \\n, or \\t)"
+
+pFuncCall :: Parser LocatedExpr
+pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (many pExpression))
 
 -- | Composes operators to allow unary operator chaining when parsing expressions
 -- Here is some black magic: we turn the problem of parsing "not" into a function that
