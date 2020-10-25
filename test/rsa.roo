@@ -170,7 +170,6 @@ procedure mod_pow (integer val x, integer val m, integer val pow, integer result
 
     while pow' > 0 do
         call mod(pow', 2, mod_result);
-        writeln "2";
         if mod_result = 1 then
             call mod(result * base, m, result);
         fi

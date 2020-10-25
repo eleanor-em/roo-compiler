@@ -279,13 +279,14 @@ compileStatement locals st@(SAssign lvalue expr) = do
             addErrors $ errorPos (locate expr)
                                  ("cannot assign `" <> tshow ty' <> "` to `" <> tshow ty <> "`")
         else
-            case expr' of
+            if isPrimitive ty then do
+                register <- compileExpr locals (simplifyExpression expr')
+                storeSymbol locals sym <?> register
+            else case expr' of
                 ELvalue lvalue' -> do
                     addErrorsOr (analyseLvalue symbols locals lvalue')
                                 (\sym' -> copyContents sym sym' (sizeof ty'))
-                _ -> do
-                    register <- compileExpr locals (simplifyExpression expr')
-                    storeSymbol locals sym <?> register            
+                _ -> error "internal error: somehow had primitive on rhs when expecting lvalue"
 
 compileStatement locals st@(SRead lvalue) = do
     commentStatement st

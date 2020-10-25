@@ -1,7 +1,7 @@
 # Big-int arithmetic in Roo
 # by Eleanor McMurtry
 
-array[20] integer bigint_t;
+array[40] integer bigint_t;
 array[10] boolean other;
 
 procedure mod (integer val x, integer val n) -> integer
@@ -55,7 +55,7 @@ procedure length (bigint_t a) -> integer
     integer result;
 {
     result <- 0;
-    i <- 19;
+    i <- 40 - 1;
     done <- false;
 
     while not done and i >= 0 do
@@ -68,9 +68,9 @@ procedure length (bigint_t a) -> integer
     od
 
     if i = 0 then
-        return 20;
+        return 40;
     else
-        return 20 - result;
+        return 40 - result;
     fi
 }
 
@@ -79,14 +79,10 @@ procedure add (bigint_t a, bigint_t b, bigint_t c)
     integer i;
     integer result;
 {
-    while i < 20 do
+    while i < 40 do
         result <- a[i] + b[i] + carry;
         c[i] <- mod(result, 10);
         carry <- result / 10;
-        #write "c[i] = ";
-        #write c[i];
-        #write ", carry = ";
-        #writeln carry;
 
         i <- i + 1;
     od
@@ -99,7 +95,7 @@ procedure compl(bigint_t x, bigint_t c)
 {
     one[0] <- 1;
 
-    while i < 20 do
+    while i < 40 do
         c[i] <- 9 - x[i];
         i <- i + 1;
     od
@@ -119,13 +115,9 @@ procedure shl(bigint_t x, integer val n, bigint_t result)
     bigint_t copy;
 {
     if n > 0 then
-        i <- 19;
+        i <- 40 - 1;
         while i >= 0 do
             if i >= n then
-                write "assigning result[";
-                write i;
-                write "] to ";
-                writeln x[i - n];
                 result[i] <- x[i - n];
             else
                 result[i] <- 0;
@@ -146,8 +138,8 @@ procedure shr(bigint_t x, integer val n, bigint_t result)
     if n = 0 then
         result <- x;
     else
-        while i < 20 do
-            if i <= 20 - n - 1 then
+        while i < 40 do
+            if i <= 40 - n - 1 then
                 result[i] <- x[i + n];
             else
                 result[i] <- 0;
@@ -156,13 +148,13 @@ procedure shr(bigint_t x, integer val n, bigint_t result)
             i <- i + 1;
         od
 
-        result[19] <- 0;
+        result[40 - 1] <- 0;
     fi
 }
 
 procedure is_neg(bigint_t x) -> boolean
 {
-    return x[19] >= 5;
+    return x[40 - 1] >= 5;
 }
 
 procedure from_int(integer val x, bigint_t result)
@@ -202,17 +194,18 @@ procedure mul (bigint_t a, bigint_t b, bigint_t result)
     x <- zero;
     result <- zero;
     
-    while digit < 20 do
+    while digit < 40 do
         bb <- b[digit];
         j <- 0;
         c <- zero;
-        while j < 20 do
+        while j < 40 do
             aa <- a[j];
             temp <- aa * bb + carry;
             c[j] <- mod(temp, 10);
             carry <- temp / 10;
             j <- j + 1;
         od
+
         call shl(c, digit, temp_b);
         call add(x, temp_b, x);
         digit <- digit + 1;
@@ -234,7 +227,7 @@ procedure print(bigint_t x)
         call compl(x, x);
     fi
 
-    i <- 19;
+    i <- 40 - 1;
     while i >= 0 do
         if x[i] != 0 then
             has_started <- true;
@@ -248,25 +241,50 @@ procedure print(bigint_t x)
     if not has_started then
         write 0;
     fi
-    
-    writeln "";
+}
+
+procedure factorial(integer val n, bigint_t result)
+    bigint_t temp, next;
+{
+    if n <= 1 then
+        call from_int(1, result);
+    else
+        call from_int(n, temp);
+        call factorial(n - 1, next);
+        call mul(temp, next, result);
+    fi
 }
 
 procedure main()
     bigint_t a, b, c;
+    integer x;
 {
     call from_int(123456789, a);
     b <- a;
-
     call add(a, b, c);
-    call print(c);
-
-    call from_int(12, a);
-    call shl(a, 1, a);
-    call print(a);
     
-    call from_int(1000, a);
-    call from_int(1000, b);
-    call mul(a, b, c);
+    call print(a);
+    write " + ";
+    call print(b);
+    write " = ";
     call print(c);
+    writeln "";
+    
+    call from_int(123456789, a);
+    call from_int(123456789, b);
+    call mul(a, b, c);
+
+    call print(a);
+    write " * ";
+    call print(b);
+    write " = ";
+    call print(c);
+    writeln "";
+
+    x <- 25;
+    call factorial(x, a);
+    write x;
+    write "! = ";
+    call print(a);
+    writeln "";
 }
