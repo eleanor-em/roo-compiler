@@ -1,0 +1,58 @@
+# Milestone 8 test case:
+# Arrays and records as parameters
+
+record { integer x
+       ; integer y
+       ; boolean z
+       } r;
+array [2] r record_arr;
+
+procedure testr(integer val n, r rec)
+{   
+    rec.x <- n * rec.x;
+    rec.y <- n * rec.y;
+    rec.z <- true;
+}
+
+procedure testa(integer val n, record_arr my_array)
+{
+    my_array[1].x <- n * my_array[0].x;
+    my_array[1].y <- n * my_array[0].y;
+    my_array[1].z <- true;
+}
+
+procedure main ()
+    r my_record;
+    record_arr d;
+{
+    my_record.x <- 21;
+    my_record.y <- 0;
+    
+    call testr(2, my_record);
+
+    write my_record.x;
+    writeln " (expect 42)";
+    write my_record.y;
+    writeln " (expect 0)";
+    write my_record.z;
+    writeln " (expect true)";
+    
+    d[0].x <- my_record.x;
+    d[0].y <- 99;
+    d[0].z <- my_record.z;
+
+    call testa(3, d);
+
+    write d[0].x;
+    writeln " (expect 42)";
+    write d[0].y;
+    writeln " (expect 99)";
+    write d[0].z;
+    writeln " (expect true)";
+    write d[1].x;
+    writeln " (expect 126)";
+    write d[1].y;
+    writeln " (expect 297)";
+    write d[1].z;
+    writeln " (expect true)";
+}

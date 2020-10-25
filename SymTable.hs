@@ -12,7 +12,6 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import Common
 import RooAst
-import Control.Monad (when)
 
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
@@ -231,7 +230,7 @@ symbolsParam symbols param = do
         putEither (procSymbols
             { psTable = Map.insert name sym table
             , psParams = params <> [sym]
-            , location = loc + 1 })
+            , location = loc + 1 }) -- formal params are either primitive or references => size 1
     where
         (cons, ty, pos, name) = case param of
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)

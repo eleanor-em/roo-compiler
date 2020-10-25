@@ -1,0 +1,13 @@
+# Milestone 5 test case:
+# By-reference arguments 
+
+procedure main ()
+    integer result;
+
+{   call p(21, result);
+    writeln(result);
+}
+
+procedure p(integer val in, integer out)
+{   out <- 2 * in;   }
+

@@ -1,0 +1,13 @@
+procedure main ()
+    integer i;
+{
+    while true do
+        writeln "";
+    od
+    if false then
+        writeln "";
+    fi
+    while i < 10 do
+        writeln "hello";
+    od
+}

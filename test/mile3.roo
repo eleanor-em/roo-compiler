@@ -1,0 +1,20 @@
+# Milestone 3 test case:
+# If and while statements 
+
+procedure main ()
+integer x;
+{   write "Integer, please: ";
+    read x;
+    while (x > 10) and (x < 100) do
+        if x < 50 then
+            x <- x - 1;
+        else
+            x <- x + 1;
+        fi
+    od
+    if x < 50 then
+        writeln "Went down";
+    else
+        writeln "Went up";
+    fi
+}

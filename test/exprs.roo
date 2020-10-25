@@ -1,0 +1,8 @@
+procedure main ()
+    integer x;
+{
+    writeln 2 * 3 + 5 / 2 > 0 and true;
+    writeln 2 * 3 + 5 / 2 > x and true;
+    writeln 2 * 3 + 5 / 2 > x and false;
+    writeln 5 > 8 / 0;
+}

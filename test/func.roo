@@ -1,0 +1,9 @@
+procedure main ()
+{
+    writeln square(3);
+}
+
+function square (integer val x) -> integer
+{
+    return x * x;
+}
