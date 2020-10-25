@@ -7,7 +7,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Either (lefts, rights)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
@@ -73,8 +72,8 @@ instance Show Type where
     show TBool   = "boolean"
     show TString = "string"
     show TInt    = "integer"
-    show (TArray _ size ty) = show ty <> "[" <> show size <> "]"
-    show (TRecord _ ty) = show ty
+    show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
+    show (TRecord name _) = show name <> "{}"
     show TVoid   = "void"
 
 sizeof :: Type -> Int
@@ -85,27 +84,15 @@ sizeof (TArray _ size ty) = size * sizeof ty
 sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
 sizeof TVoid = 0
 
--- | Specific types for aliases allow us to check more correctness without as
---   much clumsy conversion.
-data AliasType = AliasArray Int Type | AliasRecord (Map Text Field)
-    deriving Eq
-
-instance Show AliasType where
-    show (AliasArray size ty) = show ty <> "[" <> show size <>"]" 
-    show (AliasRecord record) = concat
-        [ "record {"
-        , Map.foldr (\next acc -> acc <> ", " <> show next) "" record
-        , "}" ]
-
--- | Converts an AliasType into a general Type.
-liftAlias :: Text -> AliasType -> Type
-liftAlias aliasName (AliasArray size ty) = TArray aliasName size ty
-liftAlias aliasName (AliasRecord ty) = TRecord aliasName ty
+isPrimitive :: Type -> Bool
+isPrimitive TBool = True
+isPrimitive TInt = True
+isPrimitive _ = False
 
 -- | Represents an error during static analysis. Fields are: line, col, message
 data AnalysisError = AnalysisError Int Int Text
-                   | AnalysisNote Int Int Text
-                   | AnalysisWarn Int Int Text
+                   | AnalysisNote  Int Int Text
+                   | AnalysisWarn  Int Int Text
     deriving Show
 
 -- | Creates an AnalysisError from a given SourcePos (provided by Parsec),

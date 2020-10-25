@@ -67,7 +67,7 @@ localStackSize (LocalTable _ syms _) = foldr (\x acc -> actualSize x + acc) 0 sy
         actualSize _ = 1
 
 -- | Shorthand for the two main types of symbol tables.
-type AliasTable = Map Text (SourcePos, AliasType)
+type AliasTable = Map Text (SourcePos, Type)
 type ProcTable = Map Text (SourcePos, LocalTable)
 
 -- | The root symbol table contains a table of aliases and procedures.
@@ -108,7 +108,7 @@ lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos,
 lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
 lookupType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
-        Just (_, ty) -> Right (pos, liftAlias name ty)
+        Just (_, ty) -> Right (pos, ty)
         Nothing      -> Left  $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
 
@@ -126,7 +126,7 @@ symbolsArray rootSyms (ArrayType size ty (Ident pos name)) = do
                               otherPos "first declared here:"
             Nothing -> do
                 (_, ty') <- lookupType rootSyms ty
-                Right (pos, AliasArray size ty')
+                Right (pos, TArray name size ty')
 
 -----------------------------------
 -- Records
@@ -144,7 +144,7 @@ symbolsRecord (Record fieldDecls (Ident pos name)) = do
         Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
                               otherPos "first declared here:"
-        Nothing -> putEither $ Map.insert name (pos, AliasRecord (rsTable final)) table
+        Nothing -> putEither $ Map.insert name (pos, TRecord name (rsTable final)) table
 
 -- | Check field declaration is correct, update our fieldDecls table and return any errors 
 checkFieldDecl :: FieldDecl -> EitherState RecordSymbolState ()

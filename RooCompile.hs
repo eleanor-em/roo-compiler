@@ -201,52 +201,24 @@ compileStatement locals st@(SAssign lvalue expr) = do
     current <- getEither
     let symbols = blockSyms current
 
-    addErrorsOr (analyse symbols) $ \(ty', expr', sym) -> do
-        let ty = lvalueType sym
-        case ty of
-            TArray alias _ _ -> do 
-                case ty' of 
-                    TArray alias' _ _ -> do 
-                        if alias /= alias' then 
-                            let err  = "expecting alias of type`" <> tshow alias <> "` on RHS of `<-`, found `" <> tshow alias' <> "`"
-                                note = "`" <> lvalueName sym <> "` declared here:" in
-                            addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
-                        else do 
-                            let lvalue' = exprToLvalue expr' 
-                            addErrorsOr (analyseLvalue symbols locals (fromJust lvalue'))
-                                    (\sym' -> copyContents sym sym' (sizeof ty'))
-                    _ -> do 
-                        typeError (locate expr) ty ty'
-            TRecord alias _ -> do
-                case ty' of 
-                    TRecord alias' _ -> do 
-                        if alias /= alias' then 
-                            let err  = "expecting alias of type`" <> tshow alias <> "` on RHS of `<-`, found `" <> tshow alias' <> "`"
-                                note = "`" <> lvalueName sym <> "` declared here:" in
-                            addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
-                        else do 
-                            let lvalue' = exprToLvalue expr' 
-                            addErrorsOr (analyseLvalue symbols locals (fromJust lvalue'))
-                                    (\sym' -> copyContents sym sym' (sizeof ty'))
-                    _ -> do
-                        typeError (locate expr) ty ty'
-            _ -> do    
-                if ty /= ty' then
-                    let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
-                        note = "`" <> lvalueName sym <> "` declared here:" in
-                    addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
-                else do
-                    register <- compileExpr locals (simplifyExpression expr')
-                    storeSymbol locals sym <?> register
-    where
+    let analysed = do
+        TypedExpr ty' expr' <- analyseExpression symbols locals expr
+        sym <- analyseLvalue symbols locals lvalue
+        return (ty', expr', sym)
 
-        analyse symbols = do
-            TypedExpr ty' expr' <- analyseExpression symbols locals expr
-            sym <- analyseLvalue symbols locals lvalue
-            return (ty', expr', sym)
-        
-        typeError errorLoc ty ty' = addErrors $ errorPos errorLoc $ 
-            "expected variable of type `" <> tshow ty <> "` on RHS of '<-', found `" <> tshow ty' <> "`"
+    addErrorsOr analysed $ \(ty', expr', sym) -> do
+        let ty = lvalueType sym
+        if ty /= ty' then
+            addErrors $ errorPos (locate expr)
+                                 ("cannot assign `" <> tshow ty' <> "` to `" <> tshow ty <> "`")
+        else
+            case fromLocated expr of
+                ELvalue lvalue' -> do
+                    addErrorsOr (analyseLvalue symbols locals lvalue')
+                                (\sym' -> copyContents sym sym' (sizeof ty'))
+                _ -> do
+                    register <- compileExpr locals (simplifyExpression expr')
+                    storeSymbol locals sym <?> register            
 
 compileStatement locals st@(SRead lvalue) = do
     commentStatement st
