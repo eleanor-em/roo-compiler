@@ -2,6 +2,7 @@ record {
     integer x;
     integer y
 } point_t;
+array[2] point_t array_point;
 
 procedure lengthSquared (point_t p)
 {
@@ -10,10 +11,14 @@ procedure lengthSquared (point_t p)
 
 procedure main ()
     point_t p;
+    array_point x;
 {
     p.x <- 1;
     p.y <- 2;
-
+    x[0] <- p.x;
+    x[1] <- p;
+    writeln x[0].x;
+    writeln x[0].y;
     writeln p.x * p.x + p.y * p.y;
     call lengthSquared(p);
 }

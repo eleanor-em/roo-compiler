@@ -307,7 +307,7 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> do
             case procSymType $ symType sym of
-                TArray _ ty -> do
+                TArray _ _ ty -> do
                     typecheckArrayIndex table locals indexExpr
 
                     let pos = locate indexExpr
@@ -334,7 +334,7 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
     let ty = rawSymType recSym
 
     case ty of
-        TRecord fieldMap -> do
+        TRecord _ fieldMap -> do
             fieldSym <- unwrapOr (Map.lookup fldName fieldMap)
                                  (Left $ errorWithNote
                                     fldPos ("in statement: unknown field `" <> recName <> "`")
@@ -358,7 +358,7 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
     = case Map.lookup arrName (localSymbols locals) of
         Just sym -> do
             case procSymType $ symType sym of
-                TArray _ ty@(TRecord fields) -> do
+                TArray _ _ ty@(TRecord _ fields) -> do
                     typecheckArrayIndex symbols locals indexExpr
                     case Map.lookup fldName fields of
                         Just (Field _ offset innerTy) -> do
@@ -408,3 +408,4 @@ modifiesLvalue lval (SWhile _ body)
     = any (modifiesLvalue lval) body
 
 modifiesLvalue _ _ = False
+

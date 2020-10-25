@@ -2,10 +2,21 @@ array[10] integer array_t;
 
 procedure main()
     array_t x;
+    integer remainder;
 {
     write x[2];
     if 2 < 3 then 
-        write 2 < 3; 
+        write "bob"; 
+    else 
+        write "2 is not greater than 3";
     fi
+
+    remainder <- 2;
+    while remainder > 0 do
+x <- y;
+y <- remainder;
+quotient <- x / y;
+remainder <- x - quotient * y;
+od
     write "woo";
 }

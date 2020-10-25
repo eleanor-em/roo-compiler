@@ -1,0 +1,23 @@
+array [2] integer int_array_2;
+
+procedure p(int_array_2 a, int_array_2 x)
+integer i;
+integer b;
+{
+    a[0] <- 42;
+    a[1] <- 2;
+    b <- a[0];
+    x <- a;
+    i <- 0;
+    while i < 2 do
+        writeln a[i];
+        writeln x[i];
+        i <- i + 1;
+    od
+
+}
+
+procedure main ()
+int_array_2 x;
+int_array_2 y;
+{ call p(x, y); }
