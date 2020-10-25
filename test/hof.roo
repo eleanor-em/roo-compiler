@@ -3,6 +3,7 @@ array[10] integer array_t;
 procedure main ()
     array_t arr;
     integer i;
+    procedure (integer val x) dummy;
 {
     while i < 10 do
         arr[i] <- i;
@@ -10,7 +11,15 @@ procedure main ()
     od
 
     call map((integer val x) -> integer { return x * x; }, arr, arr);
+
     call for_each((integer val x) -> { write x; write " "; }, arr);
+
+    i <- 0;
+    while i < 10 do
+        write arr[i];
+        write " ";
+        i <- i + 1;
+    od
     writeln "";
 }
 
