@@ -146,7 +146,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
     addErrorsOr (analyse symbols) $ \(ty', expr', sym) -> do
         let ty = lvalueType sym
         case ty of
-            TArray alias size _ -> do 
+            TArray alias _ _ -> do 
                 case ty' of 
                     TArray alias' _ _ -> do 
                         if alias /= alias' then 
@@ -156,7 +156,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
                         else do 
                             let lvalue' = exprToLvalue expr' 
                             addErrorsOr (analyseLvalue (rootAliases symbols) locals (fromJust lvalue'))
-                                    (\sym' -> copyContents sym sym' size)
+                                    (\sym' -> copyContents sym sym' (sizeof ty'))
                     _ -> do 
                         typeError (locate expr) ty ty'
             TRecord alias _ -> do
@@ -590,7 +590,7 @@ storeContent lval offsetReg fromRegister = do
 copyContents :: TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
 copyContents lval rval size = do
     offsetReg <- loadConst (LitInt 0)
-    copyContentsRec lval rval offsetReg ((sizeof (lvalueType lval) * size) - 1)
+    copyContentsRec lval rval offsetReg size
     
 copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Int -> EitherState BlockState ()
 copyContentsRec _ _ _ 0 = pure $ ()
