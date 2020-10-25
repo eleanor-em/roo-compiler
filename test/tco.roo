@@ -1,0 +1,29 @@
+procedure main ()
+{
+    writeln double_tco(100000);
+    writeln double_naive(100000);
+}
+
+procedure double_naive(integer val x) -> integer
+{
+    if x > 0 then
+        return 2 + double_naive(x - 1);
+    else
+        return 0;
+    fi
+}
+
+procedure double_tco(integer val x) -> integer
+{
+    return double_tco'(x, 0);
+}
+
+procedure double_tco'(integer val x, integer val acc) -> integer
+{
+    if x > 0 then
+        acc <- acc + 2;
+        return double_tco'(x - 1, acc);
+    else
+        return acc;
+    fi
+}

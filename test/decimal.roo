@@ -236,6 +236,8 @@ procedure mul (bigint_t a, bigint_t b, bigint_t result)
         call copy(x, x');
         call compl(x', x);
     fi
+    
+    result <- x;
 }
 
 procedure print(bigint_t x)
@@ -254,6 +256,10 @@ procedure main()
 {
     call from_int(28375632, a);
     call from_int(38256263, b);
+
+    call add(a, b, c);
+    call print(c);
+    
     call mul(a, b, c);
     call print(c);
 }

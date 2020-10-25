@@ -21,10 +21,12 @@ data BlockState = BlockState
     , blockInstrs :: [Text]
     , blockNextReg :: Int 
     , blockStackReg :: Int
-    , nextLabel :: Int}
+    , nextLabel :: Int
+    , isTailCall :: Bool
+    , blockEpilogue :: [Text] }
 
 initialBlockState :: RootTable -> BlockState
-initialBlockState symbols = BlockState symbols [] 0 0 0
+initialBlockState symbols = BlockState symbols [] 0 0 0 False []
 
 resetBlockRegs :: EitherState BlockState ()
 resetBlockRegs = do
@@ -53,6 +55,16 @@ popRegister register = do
     putEither (current { blockStackReg = head - 1 })
 
     addInstrs $ ozMove register (ozExtraRegisters head)
+
+setTailCall :: EitherState BlockState ()
+setTailCall = do
+    current <- getEither
+    putEither (current { isTailCall = True })
+
+unsetTailCall :: EitherState BlockState ()
+unsetTailCall = do
+    current <- getEither
+    putEither (current { isTailCall = False })
 
 -- | Add instructions to the state with indentation.
 addInstrs :: [Text] -> EitherState BlockState ()
@@ -95,8 +107,10 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
         Just (_, locals) -> do
             let stackSize = localStackSize locals
             let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
-            let epilogue = if stackSize > 0 then ozPopStackFrame  stackSize else []
+            let epilogue = (if stackSize > 0 then ozPopStackFrame  stackSize else [])
+                        <> ["return"]
 
+            putEither (current { blockEpilogue = epilogue })
             -- Load arguments
             let argPrologue = mconcat $ zipWith ozStore (map symLocation (localParams locals))
                                                         (map Register [0..])
@@ -104,20 +118,22 @@ compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
             -- Initialise local variables to 0
             let paramCount = length $ localParams locals
 
-            let localPrologue = if stackSize - 1 - paramCount > 0 then
-                    ozIntConst (Register 0) 0 <> concatMap ((`ozStore` Register 0) . StackSlot)
-                                                        [paramCount..stackSize - 1]
+            let localPrologue = if stackSize - paramCount > 0 then
+                    makeComment "init locals" <> ozIntConst (Register 0) 0
+                                              <> concatMap ((`ozStore` Register 0) . StackSlot)
+                                                           [paramCount..stackSize - 1]
                 else
                     []
 
             addInstrsRaw $ ["\n" <> makeProcLabel procName <> ":"]
                         <> makeComment "prologue"
-            addInstrs (prologue <> makeComment "load args" <> argPrologue
-                                <> makeComment "init locals" <> localPrologue)
+            addInstrs $ prologue <> makeComment "load args" <> argPrologue
+            addInstrsRaw [makeProcTailLabel procName <> ":"]
+            addInstrs localPrologue
 
             mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements
 
-            addInstrs (makeComment "epilogue" <> epilogue <> ["return"])
+            addInstrs (makeComment "epilogue" <> epilogue)
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
@@ -169,11 +185,19 @@ compileCall locals ident args = do
             let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
             (registers, final) <- runEither (mapM compileArg typedArgs') next
 
-            let moves = concatMap (uncurry ozMove)
-                                  (zip (map Register [0..]) (catMaybes registers))
+            if isTailCall current then do
+                let stores = concatMap (uncurry ozStore)
+                                       (zip (map StackSlot [0..]) (catMaybes registers))
 
-            return (blockInstrs final
-                 <> map addIndent (moves <> ozCall (makeProcLabel (fromIdent ident))), retType)
+                let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
+                return (blockInstrs final <> map addIndent instrs, retType)
+
+            else do
+                let moves = concatMap (uncurry ozMove)
+                                      (zip (map Register [0..]) (catMaybes registers))
+
+                let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
+                return (blockInstrs final <> map addIndent instrs, retType)
 
             where
                 -- | Compile the argument, loading the address for refsand the value for vals
@@ -381,8 +405,20 @@ compileStatement locals st@(SReturn expr) = do
                                  ("expecting `" <> tshow ty' <> "` on RHS of `return`, found `"
                                                 <> tshow ty <> "`")
         else do
-            register <- compileExpr locals (simplifyExpression expr')
-            (addInstrs .ozMove ozReturnRegister) <?> register
+            let compile = do
+                register <- compileExpr locals (simplifyExpression expr')
+                (addInstrs .ozMove ozReturnRegister) <?> register
+            -- Tail call optimisation :-)
+            case expr' of
+                EFunc target _ ->
+                    if fromIdent target == localProcName locals then do
+                        setTailCall
+                        compile
+                        unsetTailCall
+                    else
+                        compile
+                _ -> compile
+            addInstrs $ blockEpilogue current
 
 getLabel :: EitherState BlockState Text 
 getLabel = do 
@@ -641,3 +677,6 @@ makeComment str = ["# " <> T.strip str]
 
 makeProcLabel :: Text -> Text
 makeProcLabel = ("proc_" <>)
+
+makeProcTailLabel :: Text -> Text
+makeProcTailLabel name = "proc_" <> name <> "_loaded"

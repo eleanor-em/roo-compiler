@@ -58,10 +58,11 @@ instance Show ProcSymbol where
 data LocalTable = LocalTable
     { localParams :: [ProcSymbol]
     , localSymbols :: Map Text ProcSymbol
-    , localRetType :: Type }
+    , localRetType :: Type
+    , localProcName :: Text }
 
 localStackSize :: LocalTable -> Int
-localStackSize (LocalTable _ syms _) = foldr (\x acc -> actualSize x + acc) 0 syms
+localStackSize (LocalTable _ syms _ _) = foldr (\x acc -> actualSize x + acc) 0 syms
     where
         actualSize (ProcSymbol (ValSymbol ty) _ _ _) = sizeof ty
         actualSize _ = 1
@@ -184,7 +185,7 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType de
         Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
                               otherPos  "first declared here:"
-        _ -> putEither $ Map.insert name (pos, LocalTable params procs retType') table
+        _ -> putEither $ Map.insert name (pos, LocalTable params procs retType' name) table
     where
         retType' = case retType of
             Just retType -> liftPrimitive retType

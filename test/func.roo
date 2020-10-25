@@ -1,6 +1,6 @@
 procedure main ()
 {
-    writeln exp(2, 8);
+    writeln exp(2, 82375);
 }
 
 procedure exp(integer val base, integer val x) -> integer
