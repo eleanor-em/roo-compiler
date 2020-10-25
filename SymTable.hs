@@ -124,7 +124,7 @@ lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos,
 lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
 lookupType (RootTable aliases _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
-        Just (_, ty) -> Right (pos, liftAlias ty)
+        Just (_, ty) -> Right (pos, liftAlias name ty)
         Nothing      -> Left  $ errorPos pos $
             "unrecognised type alias `" <> name <> "`"
 

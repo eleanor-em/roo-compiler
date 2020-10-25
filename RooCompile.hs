@@ -145,10 +145,33 @@ compileStatement locals st@(SAssign lvalue expr) = do
 
     addErrorsOr (analyse symbols) $ \(ty', expr', sym) -> do
         let ty = lvalueType sym
-
         case ty of
-            TArray _ _ -> typeError ty
-            TRecord _  -> typeError ty
+            TArray alias size _ -> do 
+                case ty' of 
+                    TArray alias' _ _ -> do 
+                        if alias /= alias' then 
+                            let err  = "expecting alias of type`" <> tshow alias <> "` on RHS of `<-`, found `" <> tshow alias' <> "`"
+                                note = "`" <> lvalueName sym <> "` declared here:" in
+                            addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
+                        else do 
+                            let lvalue' = exprToLvalue expr' 
+                            addErrorsOr (analyseLvalue (rootAliases symbols) locals (fromJust lvalue'))
+                                    (\sym' -> copyContents sym sym' size)
+                    _ -> do 
+                        typeError (locate expr) ty ty'
+            TRecord alias _ -> do
+                case ty' of 
+                    TRecord alias' _ -> do 
+                        if alias /= alias' then 
+                            let err  = "expecting alias of type`" <> tshow alias <> "` on RHS of `<-`, found `" <> tshow alias' <> "`"
+                                note = "`" <> lvalueName sym <> "` declared here:" in
+                            addErrors $ errorWithNote (locate expr) err (lvaluePos sym) note
+                        else do 
+                            let lvalue' = exprToLvalue expr' 
+                            addErrorsOr (analyseLvalue (rootAliases symbols) locals (fromJust lvalue'))
+                                    (\sym' -> copyContents sym sym' (sizeof ty'))
+                    _ -> do
+                        typeError (locate expr) ty ty'
             _ -> do    
                 if ty /= ty' then
                     let err  = "expecting `" <> tshow ty' <> "` on RHS of `<-`, found `" <> tshow ty <> "`"
@@ -158,12 +181,14 @@ compileStatement locals st@(SAssign lvalue expr) = do
                     register <- compileExpr locals (simplifyExpression expr')
                     storeSymbol locals sym <?> register
     where
+
         analyse symbols = do
             TypedExpr ty' expr' <- analyseExpression (rootAliases symbols) locals expr
             sym <- analyseLvalue (rootAliases symbols) locals lvalue
             return (ty', expr', sym)
-        typeError ty = addErrors $ errorPos (locateLvalue lvalue) $
-            "expected variable of primitive type on LHS of `<-`, found `" <> tshow ty <> "`"
+        
+        typeError errorLoc ty ty' = addErrors $ errorPos errorLoc $ 
+            "expected variable of type `" <> tshow ty <> "` on RHS of '<-', found `" <> tshow ty' <> "`"
 
 compileStatement locals st@(SRead lvalue) = do
     commentStatement st
@@ -535,6 +560,50 @@ loadConst (LitInt val) = do
 
 loadConst _ = error "internal error: tried to load Text constant"
 
+-- HMMMM incomplete
+loadSlot :: TypedLvalue -> Register -> EitherState BlockState Register 
+loadSlot lval offsetReg = do
+    register <- useRegister 
+    baseReg <- useRegister 
+    addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
+            <> ozSubOffset baseReg baseReg offsetReg
+            <> ozLoadIndirect register baseReg 
+    return register 
+
+    where 
+        offsetLoad = case lval of 
+            TypedValLvalue {} -> ozLoadAddress 
+            TypedRefLvalue {} -> ozLoad
+
+storeContent :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
+storeContent lval offsetReg fromRegister = do
+    baseReg <- useRegister 
+    addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
+            <> ozSubOffset baseReg baseReg offsetReg
+            <> ozStoreIndirect baseReg fromRegister 
+
+    where 
+        offsetLoad = case lval of 
+            TypedValLvalue {} -> ozLoadAddress 
+            TypedRefLvalue {} -> ozLoad
+
+copyContents :: TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
+copyContents lval rval size = do
+    offsetReg <- loadConst (LitInt 0)
+    copyContentsRec lval rval offsetReg ((sizeof (lvalueType lval) * size) - 1)
+    
+copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Int -> EitherState BlockState ()
+copyContentsRec _ _ _ 0 = pure $ ()
+copyContentsRec lval rval offsetReg slotsRemaining = do 
+
+    -- load address from rval into a register 
+    fromRegister <- loadSlot rval offsetReg 
+    -- using the address from before, store content into our lval 
+    storeContent lval offsetReg fromRegister
+    incrReg <- loadConst (LitInt 1) 
+    addInstrs $ ozPlus offsetReg offsetReg incrReg 
+    copyContentsRec lval rval offsetReg (slotsRemaining - 1)
+    
 storeLvalue :: LocalTable -> Lvalue -> Register -> EitherState BlockState ()
 storeLvalue locals lvalue register = do
     current <- getEither
@@ -585,3 +654,7 @@ addCommentTo str = (["# " <> T.strip str] <>)
 
 makeProcLabel :: Text -> Text
 makeProcLabel = ("proc_" <>)
+
+exprToLvalue :: Expression -> Maybe Lvalue 
+exprToLvalue (ELvalue lvalue) = Just lvalue 
+exprToLvalue _ = Nothing 
