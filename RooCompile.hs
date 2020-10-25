@@ -13,9 +13,10 @@ import RooAnalyse
 import RooAst
 import SymTable
 import Oz
-import Control.Monad (when)
 import RooPrettyPrinter (prettyStatement, prettyExpr)
 import qualified Data.Map.Strict as Map
+import Control.Monad.State
+import Text.Parsec.Pos (initialPos)
 
 -- | effectively now the global state 
 data BlockState = BlockState
@@ -25,10 +26,11 @@ data BlockState = BlockState
     , blockStackReg :: Int
     , nextLabel :: Int
     , isTailCall :: Bool
-    , blockEpilogue :: [Text] }
+    , blockEpilogue :: [Text]
+    , blockNextLambda :: Int }
 
 initialBlockState :: RootTable -> BlockState
-initialBlockState symbols = BlockState symbols [] 0 0 0 False []
+initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
 
 resetBlockRegs :: EitherState BlockState ()
 resetBlockRegs = do
@@ -108,16 +110,64 @@ generateVtable table = mconcat
                     , map addIndent (ozCall (makeProcLabel procName))
                     , [ addIndent "return" ] ]
 
+compileLambdas :: Procedure -> [Procedure]
+compileLambdas (Procedure _ _ _ _ statements)
+    = concat $ evalState (mapM compileLambdasInner statements) 0
+
+compileLambdasInner :: Statement -> State Int [Procedure]
+compileLambdasInner statement
+    = case statement of
+        SAssign _ rhs -> compileExprLambdas rhs
+
+        SCall _ args  -> concat <$> mapM compileExprLambdas args
+
+        SIf expr body -> do
+            exprs <- compileExprLambdas expr
+            inners <- concat <$> mapM compileLambdasInner body
+            return $ exprs <> inners
+
+        SIfElse expr bodyIf bodyElse -> do
+            exprs <- compileExprLambdas expr
+            innersIf <- concat <$> mapM compileLambdasInner bodyIf
+            innersElse <- concat <$> mapM compileLambdasInner bodyElse
+            return $ exprs <> innersIf <> innersElse
+
+        SWhile expr body -> do
+            exprs <- compileExprLambdas expr
+            inners <- concat <$> mapM compileLambdasInner body
+            return $ exprs <> inners
+
+        SReturn expr  -> compileExprLambdas expr
+
+        _ -> pure []
+    where
+        compileExprLambdas :: LocatedExpr -> State Int [Procedure]
+        compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
+            ls <- compileExprLambdas lhs
+            rs <- compileExprLambdas rhs
+            return $ ls <> rs
+        compileExprLambdas (LocatedExpr _ (EUnOp _ inner))
+            = compileExprLambdas inner
+        compileExprLambdas (LocatedExpr _ (EFunc _ args))
+            = concat <$> mapM compileExprLambdas args
+        compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
+            current <- get
+            put (current + 1)
+            let header = ProcHeader (Ident pos (lambdaLabel current)) params
+            return $ pure $ Procedure pos header retType varDecls body
+
+        compileExprLambdas _ = pure []
 
 compileProgram :: Program -> ([AnalysisError], [Text])
-compileProgram program@(Program _ _ procs) = do
-    let (errs, symbols) = getAllSymbols program
+compileProgram (Program recs arrs procs) = do
+    let procs' = procs <> concatMap compileLambdas procs
+    let (errs, symbols) = getAllSymbols (Program recs arrs (procs'))
 
     if not (hasMain symbols) then
         (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"], [])
     else do
         -- Compile all the procedures in our program.
-        let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
+        let (errs', result) = execEither (mapM_ compileProc procs') (initialBlockState symbols)
         let output = addHeader symbols (blockInstrs result)
 
         let allErrs = errs <> errs'
@@ -279,7 +329,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
             addErrors $ errorPos (locate expr)
                                  ("cannot assign `" <> tshow ty' <> "` to `" <> tshow ty <> "`")
         else
-            if isPrimitive ty then do
+            if isPrimitive ty || isFunction ty then do
                 register <- compileExpr locals (simplifyExpression expr')
                 storeSymbol locals sym <?> register
             else case expr' of
@@ -537,6 +587,12 @@ compileExpr locals (EFunc func args) = do
         Just _   -> return $ Just result
         _        -> return Nothing
 
+compileExpr locals (ELambda _ _ _ _) = do
+    current <- getEither
+    let nextLambda = blockNextLambda current
+    putEither ( current { blockNextLambda = nextLambda + 1 })
+    compileExpr locals (ELvalue (LId (Ident (initialPos "") (lambdaLabel nextLambda))))
+
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
 loadLvalue locals lvalue = do
     current <- getEither
@@ -734,3 +790,6 @@ makeProcTailLabel name = "proc_" <> name <> "_loaded"
 
 vTableLabel :: Text
 vTableLabel = "__vtable"
+
+lambdaLabel :: Int -> Text
+lambdaLabel i = "__lambda" <> tshow i

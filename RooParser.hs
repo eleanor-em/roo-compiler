@@ -132,7 +132,7 @@ pFunction = do
         pos <- sourcePos
         reserved "procedure"
         header <- pHeader
-        retType <- optionMaybe (PrimitiveTypeName <$> (reservedOp "->" *> pPrimitiveType))
+        retType <- option VoidTypeName (PrimitiveTypeName <$> (reservedOp "->" *> pPrimitiveType))
         varDecls <- many pVarDecl
         body <- braces (many1 pStatement)
         return $ Procedure pos header retType varDecls body
@@ -175,8 +175,8 @@ pFunctionType :: Parser TypeName
 pFunctionType = do
     reserved "procedure"
     params <- parens (pFormalParam `sepBy` comma)
-    retType <- optionMaybe (reservedOp "->" *> pPrimitiveType)
-    return $ FunctionTypeName params (PrimitiveTypeName <$> retType)
+    retType <- option VoidTypeName (PrimitiveTypeName <$> (reservedOp "->" *> pPrimitiveType))
+    return $ FunctionTypeName params retType
 
 -- | Parses a positive integer and returns an Int node if accepted 
 pPositiveInt :: Parser Int
@@ -341,7 +341,7 @@ pExpression =
 -- | Parses a factor and returns and Expression node if accepted 
 pFactor :: Parser LocatedExpr
 pFactor =
-        choice [ parens pExpression, pStringLiteral, pIntLiteral
+        choice [ try pLambda, parens pExpression, pStringLiteral, pIntLiteral
                , pBoolLiteral, try pFuncCall, pNegatedExpr, pLvalueExpr ]
     <?>
         "expression"
@@ -416,6 +416,16 @@ pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
 
 pFuncCall :: Parser LocatedExpr
 pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` comma))
+
+pLambda :: Parser LocatedExpr
+pLambda = do
+    pos <- sourcePos
+    params <- parens (pFormalParam `sepBy` comma)
+    reservedOp "->"
+    retType <- option VoidTypeName (PrimitiveTypeName <$> pPrimitiveType)
+    varDecls <- many pVarDecl
+    statements <- braces (many pStatement);
+    return $ LocatedExpr pos $ ELambda params retType varDecls statements
 
 -- | Composes operators to allow unary operator chaining when parsing expressions
 -- Here is some black magic: we turn the problem of parsing "not" into a function that

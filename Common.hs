@@ -109,6 +109,10 @@ isPrimitive TBool = True
 isPrimitive TInt = True
 isPrimitive _ = False
 
+isFunction :: Type -> Bool
+isFunction (TFunc _ _) = True
+isFunction _           = False
+
 -- | Represents an error during static analysis. Fields are: line, col, message
 data AnalysisError = AnalysisError Int Int Text
                    | AnalysisNote  Int Int Text

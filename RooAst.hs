@@ -44,7 +44,7 @@ data ArrayType = ArrayType Int LocatedTypeName Ident
 --     1. a procedure header 
 --     2. a list of local variable declarations
 --     3. a list of statements 
-data Procedure = Procedure SourcePos ProcHeader (Maybe TypeName) [VarDecl] [Statement]
+data Procedure = Procedure SourcePos ProcHeader TypeName [VarDecl] [Statement]
     deriving (Show, Eq)
 
 -- | A Procedure Header node consists of:
@@ -79,7 +79,8 @@ data Parameter = TypeParam LocatedTypeName Ident | ValParam LocatedTypeName Iden
 -- | A Type Name node can either by a Primitive Type or a type Alias 
 data TypeName = PrimitiveTypeName PrimitiveType
               | AliasTypeName Ident
-              | FunctionTypeName [Parameter] (Maybe TypeName)
+              | FunctionTypeName [Parameter] TypeName
+              | VoidTypeName
     deriving (Show, Eq)
 
 data LocatedTypeName = LocatedTypeName SourcePos TypeName
@@ -121,6 +122,7 @@ data Expression
     | EBinOp BinOp LocatedExpr LocatedExpr
     | EUnOp UnOp LocatedExpr
     | EFunc Ident [LocatedExpr]
+    | ELambda [Parameter] TypeName [VarDecl] [Statement]
     deriving (Show, Eq)
 
 liftExpr :: Expression -> LocatedExpr

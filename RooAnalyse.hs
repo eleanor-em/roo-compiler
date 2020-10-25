@@ -144,6 +144,13 @@ typecheckExpression table locals expr@(EFunc func args) = do
     (_, _, ty) <- typecheckCall table locals func args
     return $ TypedExpr ty expr
 
+typecheckExpression table _ expr@(ELambda params retType _ _) = do
+    paramTys <- mapM (toProcSym table) params
+    let retType' = case retType of
+            PrimitiveTypeName ty -> liftPrimitive ty
+            _                    -> TVoid
+    return $ TypedExpr (TFunc paramTys retType') expr
+
 typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
                            -> Either [AnalysisError] ([TypedExpr], [ProcSymType], Type)
 typecheckCall table locals (Ident pos name) args = do

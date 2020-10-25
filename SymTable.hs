@@ -23,6 +23,10 @@ data ProcSymbol = ProcSymbol
     , symName :: Text }
     deriving Eq
 
+toProcSym :: RootTable -> Parameter -> Either [AnalysisError] ProcSymType
+toProcSym table (TypeParam ty _) = RefSymbol . snd <$> lookupType table ty
+toProcSym table (ValParam ty _)  = ValSymbol . snd <$> lookupType table ty
+
 rawSymType :: ProcSymbol -> Type
 rawSymType = procSymType . symType
 
@@ -120,15 +124,11 @@ lookupType (RootTable aliases _ _ _) (LocatedTypeName pos (AliasTypeName (Ident 
             "unrecognised type alias `" <> name <> "`"
 
 lookupType table (LocatedTypeName pos (FunctionTypeName params retType)) = do
-    paramTys <- mapM toProcSym params
+    paramTys <- mapM (toProcSym table) params
     let retType' = case retType of
-            Just (PrimitiveTypeName ty) -> liftPrimitive ty
-            _                           -> TVoid
+            PrimitiveTypeName ty -> liftPrimitive ty
+            _                    -> TVoid
     return (pos, TFunc paramTys retType')
-
-    where
-        toProcSym (TypeParam ty _) = RefSymbol . snd <$> lookupType table ty
-        toProcSym (ValParam ty _)  = ValSymbol . snd <$> lookupType table ty
 
 -- | Analyse a single array type declaration and extract any symbols.
 symbolsArray :: RootTable -> ArrayType -> EitherState AliasTable ()
@@ -218,8 +218,8 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType de
             putEither (ProcState newProcs newPtrs newVtable)
     where
         retType' = case retType of
-            Just (PrimitiveTypeName ty) -> liftPrimitive ty
-            _            -> TVoid
+            PrimitiveTypeName ty -> liftPrimitive ty
+            _                    -> TVoid
 
 -- | Check whether there is an existing type with this name. If not, returns the checked type.
 procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState

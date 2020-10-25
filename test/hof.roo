@@ -9,9 +9,8 @@ procedure main ()
         i <- i + 1;
     od
 
-    call map(square, arr, arr);
-    call for_each(print_sep, arr);
-
+    call map((integer val x) -> integer { return x * x; }, arr, arr);
+    call for_each((integer val x) -> { write x; write " "; }, arr);
     writeln "";
 }
 

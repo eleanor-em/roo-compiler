@@ -57,7 +57,7 @@ prettyArrayDecl (ArrayType size typeName ident) = mconcat
 
 -- | Replaces a Procedure node with its pretty-printed representation
 prettyProcedure :: Procedure -> Text
-prettyProcedure (Procedure _ header Nothing varDecls body) = mconcat
+prettyProcedure (Procedure _ header VoidTypeName varDecls body) = mconcat
     [ prettyHeader header
     , "\n"
     , mconcat $ map prettyVarDecls varDecls
@@ -65,7 +65,7 @@ prettyProcedure (Procedure _ header Nothing varDecls body) = mconcat
     , prettyAllStatements body 1
     , "}\n" ]
 
-prettyProcedure (Procedure _ header (Just retType) varDecls body) = mconcat
+prettyProcedure (Procedure _ header retType varDecls body) = mconcat
     [ prettyHeader header
     , " -> "
     , prettyTypeInner retType
@@ -90,9 +90,11 @@ prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
 prettyTypeInner :: TypeName -> Text
 prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
 prettyTypeInner (AliasTypeName ident) = fromIdent ident
-prettyTypeInner (FunctionTypeName params retType)
+prettyTypeInner (FunctionTypeName params VoidTypeName)
     = "procedure(" <> foldMap prettyParameter params <> ")"
-                   <> maybe "" prettyTypeInner retType
+prettyTypeInner (FunctionTypeName params retType)
+    = "procedure(" <> foldMap prettyParameter params <> ") -> " <> prettyTypeInner retType
+prettyTypeInner VoidTypeName = "void"
 
 -- | Replaces a FieldDecl node with a string 
 prettyFieldDecl :: FieldDecl -> Text 
@@ -230,6 +232,9 @@ prettyGetExpr expr@(EUnOp op _) (OpRight parentOp)
 -- | Handling the base unary operator case 
 prettyGetExpr (EUnOp op (LocatedExpr _ expr)) _
     = prettyUnOp op <> prettyExpr expr
+
+-- TODO: make nicer
+prettyGetExpr (ELambda _ _ _ _) _ = "<lambda expression>"
 
 -----------------------------------
 -- Expression Helper Pretty Printers 
