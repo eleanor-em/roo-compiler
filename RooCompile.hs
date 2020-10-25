@@ -449,28 +449,14 @@ loadAddress locals lvalue = do
             addErrors errs
             return Nothing
 
-        Right (TypedRefLvalue _ location offset _ _) ->
-            if noOffset == offset then do
-                -- Copy the reference to the target
-                register <- useRegister
-                addInstrs $ ozLoad register location
-                return $ Just register
-            else do
-                -- Copy the reference to the target and add offset
-                baseReg <- useRegister
-                offsetReg <- compileExpr locals offset
-                case offsetReg of
-                    Just offsetReg -> do
-                        addInstrs $ ozLoad baseReg location
-                                 <> ozSubOffset baseReg baseReg offsetReg
-                        return $ Just baseReg
-                    _ -> return Nothing
+        Right lval -> do
+            let offset = lvalueOffset lval
+            let location = lvalueLocation lval
 
-        Right (TypedValLvalue _ location offset _ _) ->
             if noOffset == offset then do
                 -- Load the address directly
                 register <- useRegister
-                addInstrs $ ozLoadAddress register location
+                addInstrs $ loadOp lval register location
                 return $ Just register
             else do
                 -- Load the address and add offset
@@ -478,10 +464,14 @@ loadAddress locals lvalue = do
                 offsetReg <- compileExpr locals offset
                 case offsetReg of
                     Just offsetReg -> do
-                        addInstrs $ ozLoadAddress baseReg location
+                        addInstrs $ loadOp lval baseReg location
                                  <> ozSubOffset baseReg baseReg offsetReg
                         return $ Just baseReg
                     _ -> return Nothing
+    where
+        loadOp lval = case lval of
+            TypedValLvalue {} -> ozLoadAddress
+            TypedRefLvalue {} -> ozLoad
 
 loadSymbol :: LocalTable -> TypedLvalue -> EitherState BlockState (Maybe Register)
 loadSymbol locals lval = do
