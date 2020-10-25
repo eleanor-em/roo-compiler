@@ -12,7 +12,6 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import Common
 import RooAst
-import Control.Monad (when)
 
 -- | A procedure symbol can be either a value or a reference.
 data ProcSymType = ValSymbol Type | RefSymbol Type
