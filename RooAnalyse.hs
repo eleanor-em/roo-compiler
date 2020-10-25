@@ -150,15 +150,19 @@ simplifyExpression (EUnOp UnNegate inner)
 
 simplifyExpression (EBinOp BinAnd lhs rhs)
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
-        (EConst (LitBool False), _) -> EConst (LitBool False)
-        (_ , EConst (LitBool False)) -> EConst (LitBool False)
+        -- As per Piazza, eliminate below short-circuiting. :(
+            
+        -- (EConst (LitBool False), _) -> EConst (LitBool False)
+        -- (_ , EConst (LitBool False)) -> EConst (LitBool False)
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs && rhs))
         (lhs, rhs) -> EBinOp BinAnd (liftExpr lhs) (liftExpr rhs)
 
 simplifyExpression (EBinOp BinOr lhs rhs)
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
-        (EConst (LitBool True), _) -> EConst (LitBool True)
-        (_ , EConst (LitBool True)) -> EConst (LitBool True)
+        -- As per Piazza, eliminate below short-circuiting. :(
+            
+        -- (EConst (LitBool True), _) -> EConst (LitBool True)
+        -- (_ , EConst (LitBool True)) -> EConst (LitBool True)
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs || rhs))
         (lhs, rhs) -> EBinOp BinOr (liftExpr lhs) (liftExpr rhs)
 

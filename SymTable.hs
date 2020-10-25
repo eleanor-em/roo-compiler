@@ -231,7 +231,7 @@ symbolsParam symbols param = do
         putEither (procSymbols
             { psTable = Map.insert name sym table
             , psParams = params <> [sym]
-            , location = loc + 1 })
+            , location = loc + 1 }) -- formal params are either primitive or references => size 1
     where
         (cons, ty, pos, name) = case param of
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
