@@ -97,7 +97,7 @@ pProgram = do
     records <- many pRecord
     arrays <- many pArrayType
     procedures <- many1 pProcedure
-    functions <- many1 pFunction
+    functions <- many pFunction
     eof
     return $ Program records arrays procedures functions
 
