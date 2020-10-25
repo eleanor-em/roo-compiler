@@ -21,8 +21,7 @@ procedure double_tco(integer val x) -> integer
 procedure double_tco'(integer val x, integer val acc) -> integer
 {
     if x > 0 then
-        acc <- acc + 2;
-        return double_tco'(x - 1, acc);
+        return double_tco'(x - 1, acc + 2);
     else
         return acc;
     fi
