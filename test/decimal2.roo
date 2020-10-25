@@ -122,10 +122,6 @@ procedure shl(bigint_t x, integer val n, bigint_t result)
         i <- 19;
         while i >= 0 do
             if i >= n then
-                write "assigning result[";
-                write i;
-                write "] to ";
-                writeln x[i - n];
                 result[i] <- x[i - n];
             else
                 result[i] <- 0;

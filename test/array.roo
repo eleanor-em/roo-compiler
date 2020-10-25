@@ -13,6 +13,16 @@ procedure shl (array_t x, array_t result)
 
         i <- i - 1;
     od
+    
+    writeln "--";
+
+    i <- 9;
+    while i >= 0 do
+        write x[i];
+        write " ";
+        writeln result[i];
+        i <- i - 1;
+    od
 }
 
 procedure print (array_t x)
