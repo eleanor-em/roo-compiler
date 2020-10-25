@@ -484,30 +484,13 @@ loadAddress locals lvalue = do
                     _ -> return Nothing
 
 loadSymbol :: LocalTable -> TypedLvalue -> EitherState BlockState (Maybe Register)
-loadSymbol locals (TypedValLvalue _ location offset _ _) = do
-    register <- useRegister
-    if noOffset == offset then do
-        addInstrs $ ozLoad register location
-        return $ Just register
-    else do
-        -- Compute a value offset
-        baseReg <- useRegister
-        offsetReg <- compileExpr locals offset
-        case offsetReg of
-            Just offsetReg -> do
-                addInstrs $ ozLoadAddress baseReg location
-                         <> ozSubOffset baseReg baseReg offsetReg
-                         <> ozLoadIndirect register baseReg
-                return $ Just register
+loadSymbol locals lval = do
+    let offset = lvalueOffset lval
+    let location = lvalueLocation lval
 
-            _ -> return Nothing
-
-loadSymbol locals (TypedRefLvalue _ location offset _ _) =
     if noOffset == offset then do
-        ptr <- useRegister
         register <- useRegister
-        addInstrs $ ozLoad ptr location
-                 <> ozLoadIndirect register ptr
+        noOffsetOp register
         return $ Just register
     else do
         -- Compute a reference offset
@@ -516,11 +499,24 @@ loadSymbol locals (TypedRefLvalue _ location offset _ _) =
         offsetReg <- compileExpr locals offset
         case offsetReg of
             Just offsetReg -> do
-                addInstrs $ ozLoad baseReg location
+                addInstrs $ offsetLoad baseReg location
                          <> ozSubOffset baseReg baseReg offsetReg
                          <> ozLoadIndirect register baseReg
                 return $ Just register
             _ -> return Nothing
+    where
+        noOffsetOp register = case lval of
+            TypedValLvalue {} ->
+                addInstrs $ ozLoad register (lvalueLocation lval) 
+
+            TypedRefLvalue {} -> do
+                ptr <- useRegister
+                addInstrs $ ozLoad ptr (lvalueLocation lval)
+                         <> ozLoadIndirect register ptr
+        
+        offsetLoad = case lval of
+            TypedValLvalue {} -> ozLoadAddress
+            TypedRefLvalue {} -> ozLoad
 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do
