@@ -12,6 +12,7 @@ import Common
 import RooAst
 import RooPrettyPrinter (prettyBinOp)
 import SymTable
+import Control.Monad (unless)
 
 -- | Checks if the symbol table contains an appropriate main procedure.
 hasMain :: RootTable -> Bool
@@ -26,13 +27,13 @@ data TypedExpr = TypedExpr
 
 -- | Type-checks a located expression, and returns the expression annotated with its type
 --   if successful. This is a helpful shortcut for code generation.
-analyseExpression :: AliasTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] TypedExpr
-analyseExpression aliases locals expr = typecheckExpression aliases locals $ fromLocated expr
+analyseExpression :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] TypedExpr
+analyseExpression table locals expr = typecheckExpression table locals $ fromLocated expr
 
 -- | Type-checks an expression, and ensures it is of integer type.
-typecheckArrayIndex :: AliasTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] ()
-typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
-    indexTy <- typecheckExpression aliases locals expr
+typecheckArrayIndex :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] ()
+typecheckArrayIndex table locals (LocatedExpr pos expr) = do
+    indexTy <- typecheckExpression table locals expr
     case typeof indexTy of
         TInt -> return ()
         ty -> Left $ errorPos pos $
@@ -40,14 +41,14 @@ typecheckArrayIndex aliases locals (LocatedExpr pos expr) = do
 
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
-typecheckExpression :: AliasTable -> LocalTable -> Expression -> Either [AnalysisError] TypedExpr
+typecheckExpression :: RootTable -> LocalTable -> Expression -> Either [AnalysisError] TypedExpr
 typecheckExpression _ locals expr@(ELvalue (LId (Ident pos ident)))
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> pure $ TypedExpr (procSymType $ symType sym) expr
         Nothing  -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
-typecheckExpression aliases locals expr@(ELvalue lvalue) = do
-    ty <- analyseLvalue aliases locals lvalue
+typecheckExpression table locals expr@(ELvalue lvalue) = do
+    ty <- analyseLvalue table locals lvalue
     return $ TypedExpr (lvalueType ty) expr
 
 -- Literals are always well-typed.
@@ -57,15 +58,15 @@ typecheckExpression _ _ expr@(EConst literal) = Right $ case literal of
     LitString _ -> TypedExpr TString expr
 
 -- Boolean negations must check whether the inner expression is boolean.
-typecheckExpression aliases locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
-    exprType <- typeof <$> typecheckExpression aliases locals inner
+typecheckExpression table locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
+    exprType <- typeof <$> typecheckExpression table locals inner
     case exprType of
         TBool -> pure $ TypedExpr TBool expr
         ty    -> Left $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
 
 -- Integer negations must check whether the inner expression is an integer.
-typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
-    exprType <- typeof <$> typecheckExpression aliases locals inner
+typecheckExpression table locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
+    exprType <- typeof <$> typecheckExpression table locals inner
     case exprType of
         TInt -> pure $ TypedExpr TInt expr
         ty   -> Left $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
@@ -75,11 +76,11 @@ typecheckExpression aliases locals expr@(EUnOp UnNegate (LocatedExpr pos inner))
 --  2. The operator is an integer operator (in which case both sides must be integers)
 --  3. The operator is a comparison operator (in which case both sides must be
 --     of the same non-string type)
-typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs))
+typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (LocatedExpr rPos rhs))
     | op `elem` [BinOr, BinAnd]                                 = checkBoth TBool
     | op `elem` [BinLt, BinLte, BinEq, BinNeq, BinGt, BinGte]   = do
-        ltype <- typeof <$> typecheckExpression aliases locals lhs
-        rtype <- typeof <$> typecheckExpression aliases locals rhs
+        ltype <- typeof <$> typecheckExpression table locals lhs
+        rtype <- typeof <$> typecheckExpression table locals rhs
         if ltype == rtype then
             pure    $ TypedExpr TBool expr
         else
@@ -92,8 +93,8 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
         
     | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
-        ltype <- typeof <$> typecheckExpression aliases locals lhs
-        rtype <- typeof <$> typecheckExpression aliases locals rhs
+        ltype <- typeof <$> typecheckExpression table locals lhs
+        rtype <- typeof <$> typecheckExpression table locals rhs
         
         if ltype /= TString then
             if rtype /= TString then
@@ -112,8 +113,8 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
             Left $ errorPos lPos "cannot compare `string`"
     where
         checkBoth ty = do
-            ltype <- typeof <$> typecheckExpression aliases locals lhs
-            rtype <- typeof <$> typecheckExpression aliases locals rhs
+            ltype <- typeof <$> typecheckExpression table locals lhs
+            rtype <- typeof <$> typecheckExpression table locals rhs
             
             if ltype == ty then
                 if rtype == ty then
@@ -136,6 +137,62 @@ typecheckExpression aliases locals expr@(EBinOp op (LocatedExpr lPos lhs) (Locat
                  , "`, found `"
                  , tshow ltype
                  , "`" ]
+
+typecheckExpression table locals expr@(EFunc func args) = do
+    (_, _, ty) <- typecheckCall table locals func args
+    return $ TypedExpr ty expr
+
+typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr] -> Either [AnalysisError] ([TypedExpr], [ProcSymbol], Type)
+typecheckCall table locals (Ident pos name) args = do
+    (targetPos, targetProc) <- unwrapOr (lookupProc table name)
+                                        (Left $ errorPos pos $ "unknown procedure `" <> name <> "`")
+    let params = localParams targetProc
+
+    -- Check # arguments = # parameters
+    unless  (length args == length params)
+            (let err  = mconcat
+                    [ "`", name, "` expects ", countWithNoun (length params) "parameter"
+                    , " but was given ", tshow (length args) ]
+                 note = "`" <> name <> "` declared here:" in
+                Left $ errorWithNote pos err targetPos note)
+
+    -- Type-check arguments
+    typedArgs <- concatEither $ map ((pure <$>) . analyseExpression table locals)
+                                    args
+
+    -- Check argument types match parameter types
+    let mismatched = filter (\((_, a), b) -> typeof a /= rawSymType b)
+                            (zip (enumerate typedArgs) params)
+
+    let reportErr ((i, expr), symbol) = let err  = mconcat [ "in argument: expecting `"
+                                                , tshow $ rawSymType symbol
+                                                , "`, found `"
+                                                , tshow $ typeof expr
+                                                , "`" ]
+                                            note = "parameter declared here:"  in
+            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+
+    concatEither $ map reportErr mismatched
+
+    -- Check reference args are filled with lvalues
+    let mismatched = filter (\((_, a), b) -> not (checkRefArgs a b))
+                            (zip (enumerate typedArgs) params)
+
+    let reportErr ((i, _), symbol) = let err  = mconcat [ "in argument: expecting lvalue" ]
+                                         note = "parameter declared here:" in
+            Left $ errorWithNote (locate $ args !! i) err (symPos symbol) note
+
+    concatEither $ map reportErr mismatched
+
+    return (typedArgs, params, localRetType targetProc)
+    
+    where
+        -- | Checks whether the expression and symbol are either:
+        --   lvalue + ref
+        --   any + val
+        checkRefArgs (TypedExpr _ (ELvalue _)) (ProcSymbol (RefSymbol _) _ _ _) = True
+        checkRefArgs _ (ProcSymbol (RefSymbol _) _ _ _) = False
+        checkRefArgs _ _ = True
 
 simplifyExpression :: Expression -> Expression
 simplifyExpression (EUnOp UnNot inner)
@@ -240,18 +297,18 @@ symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
 noOffset :: Expression
 noOffset = EConst (LitInt 0)
 
-analyseLvalue :: AliasTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
+analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
 analyseLvalue _ locals (LId (Ident pos name)) = do
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
                     (Left $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
     return $ symToTypedLvalue sym noOffset
 
-analyseLvalue symbols locals (LArray (Ident pos ident) indexExpr)
+analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> do
             case procSymType $ symType sym of
                 TArray _ ty -> do
-                    typecheckArrayIndex symbols locals indexExpr
+                    typecheckArrayIndex table locals indexExpr
 
                     let pos = locate indexExpr
                     index <- if sizeof ty /= 1 then

@@ -12,11 +12,15 @@ procedure sumLengthSquared (point_arr p)
 
 procedure main ()
     point_arr p;
+    point_arr p';
 {
     p[0].x <- 1;
     p[0].y <- 2;
     p[1].x <- 1;
     p[1].y <- 2;
 
+    p' <- p;
+
     call sumLengthSquared(p);
+    call sumLengthSquared(p');
 }

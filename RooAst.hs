@@ -21,7 +21,7 @@ import Text.Parsec.Pos (initialPos)
 --     1. a list of records 
 --     2. a list of array type definitions 
 --     3. a list of procedures   
-data Program = Program [Record] [ArrayType] [Procedure] [Function]
+data Program = Program [Record] [ArrayType] [Procedure]
     deriving (Show, Eq)
 
 -- | A Record node consists of:
@@ -44,10 +44,7 @@ data ArrayType = ArrayType Int LocatedTypeName Ident
 --     1. a procedure header 
 --     2. a list of local variable declarations
 --     3. a list of statements 
-data Procedure = Procedure SourcePos ProcHeader [VarDecl] [Statement]
-    deriving (Show, Eq)
-
-data Function = Function SourcePos ProcHeader PrimitiveType [VarDecl] [Statement]
+data Procedure = Procedure SourcePos ProcHeader (Maybe PrimitiveType) [VarDecl] [Statement]
     deriving (Show, Eq)
 
 -- | A Procedure Header node consists of:

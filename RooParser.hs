@@ -56,9 +56,9 @@ scanner = Q.makeTokenParser
     , Q.reservedNames   = [ "read", "write", "writeln", "call", "if", "then"
                           , "else", "fi", "procedure", "array", "record", "while"
                           , "do", "od", "integer", "boolean", "val", "true", "false"
-                          , "function", "return" ]
+                          , "return" ]
     , Q.reservedOpNames = [ "or", "and", "not", "=", "!=", "<", "<=", ">"
-                          , ">=", "+", "-", "*", "/", "<-", "." ]
+                          , ">=", "+", "-", "*", "/", "<-", ".", "->" ]
     , Q.caseSensitive   = True
     })
 
@@ -96,10 +96,9 @@ pProgram = do
     whiteSpace
     records <- many pRecord
     arrays <- many pArrayType
-    procedures <- many1 pProcedure
-    functions <- many pFunction
+    procedures <- many1 pFunction
     eof
-    return $ Program records arrays procedures functions
+    return $ Program records arrays procedures
 
 -----------------------------------
 -- Main Definition Parsing
@@ -128,28 +127,15 @@ pArrayType = do
     <?>
         "array type"
 
--- | Parses a procedure and returns a Procedure node if accepted 
-pProcedure :: Parser Procedure
-pProcedure = do
+pFunction :: Parser Procedure
+pFunction = do
         pos <- sourcePos
         reserved "procedure"
         header <- pHeader
+        retType <- optionMaybe (reservedOp "->" *> pPrimitiveType)
         varDecls <- many pVarDecl
         body <- braces (many1 pStatement)
-        return $ Procedure pos header varDecls body
-    <?>
-        "procedure declaration"
-
-pFunction :: Parser Function
-pFunction = do
-        pos <- sourcePos
-        reserved "function"
-        header <- pHeader
-        reserved "->"
-        retType <- pPrimitiveType
-        varDecls <- many pVarDecl
-        body <- braces (many1 pStatement)
-        return $ Function pos header retType varDecls body
+        return $ Procedure pos header retType varDecls body
     <?>
         "function declaration"
 
@@ -415,7 +401,7 @@ pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
     <?> "escape sequence (\\\", \\\\, \\n, or \\t)"
 
 pFuncCall :: Parser LocatedExpr
-pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (many pExpression))
+pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` comma))
 
 -- | Composes operators to allow unary operator chaining when parsing expressions
 -- Here is some black magic: we turn the problem of parsing "not" into a function that

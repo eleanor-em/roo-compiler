@@ -62,7 +62,7 @@ instance Show Field where
     show = show . fieldTy
 
 -- | The different data types.
-data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Field)
+data Type = TBool | TString | TInt | TArray Int Type | TRecord (Map Text Field) | TVoid
     deriving Eq
 
 liftPrimitive :: PrimitiveType -> Type
@@ -75,11 +75,13 @@ instance Show Type where
     show TInt    = "integer"
     show (TArray size ty) = show ty <> "[" <> show size <> "]"
     show (TRecord ty) = show ty
+    show TVoid   = "void"
 
 sizeof :: Type -> Int
 sizeof TBool = 1
 sizeof TString = 1
 sizeof TInt = 1
+sizeof TVoid = 0
 sizeof (TArray size ty) = size * sizeof ty
 sizeof (TRecord map) = foldr ((+) . sizeof . fieldTy) 0 map
 

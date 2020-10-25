@@ -57,21 +57,14 @@ instance Show ProcSymbol where
 --   parameters in order, and a table of procedure symbols.
 data LocalTable = LocalTable
     { localParams :: [ProcSymbol]
-    , localSymbols :: Map Text ProcSymbol }
+    , localSymbols :: Map Text ProcSymbol
+    , localRetType :: Type }
 
 localStackSize :: LocalTable -> Int
-localStackSize (LocalTable _ syms) = foldr (\x acc -> actualSize x + acc) 0 syms
+localStackSize (LocalTable _ syms _) = foldr (\x acc -> actualSize x + acc) 0 syms
     where
         actualSize (ProcSymbol (ValSymbol ty) _ _ _) = sizeof ty
         actualSize _ = 1
-
-instance Show LocalTable where
-    show (LocalTable params syms) = concat
-        [ "params: { "
-        , show params
-        , "}, locals: {"
-        , show $ Map.toList syms
-        , "}" ]
 
 -- | Shorthand for the two main types of symbol tables.
 type AliasTable = Map Text (SourcePos, AliasType)
@@ -81,14 +74,6 @@ type ProcTable = Map Text (SourcePos, LocalTable)
 data RootTable = RootTable
     { rootAliases :: AliasTable
     , rootProcs :: ProcTable }
-
-instance Show RootTable where
-    show syms = concat
-        [ "["
-        , show $ Map.toList $ rootAliases syms
-        , ", "
-        , show $ Map.toList $ rootProcs syms
-        , "]" ]
 
 data RecordSymbolState = RecordSymbolState
     { rsOffset :: Int
@@ -105,7 +90,7 @@ data ProcSymbolState = ProcSymbolState
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).
 getAllSymbols :: Program -> ([AnalysisError], RootTable)
-getAllSymbols (Program records arrays procs _) = do
+getAllSymbols (Program records arrays procs) = do
     let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
     let symbols = RootTable records' Map.empty
 
@@ -181,9 +166,9 @@ checkFieldDecl (FieldDecl ty (Ident pos name)) = do
 -----------------------------------
 -- | Analyse a single procedure declaration and extract any symbols.
 symbolsProc :: RootTable -> Procedure -> EitherState ProcTable ()
-symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) = do
+symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType decls _) = do
     table <- getEither
-
+    
     let initial = ProcSymbolState 0 Map.empty []
     let (errs, procSymbols) = execEither (mapM_ (symbolsParam symbols) params) initial
     addErrors errs
@@ -199,7 +184,11 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) decls _) =
         Just (otherPos, _) -> addErrors $
                 errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
                               otherPos  "first declared here:"
-        _ -> putEither $ Map.insert name (pos, LocalTable params procs) table
+        _ -> putEither $ Map.insert name (pos, LocalTable params procs retType') table
+    where
+        retType' = case retType of
+            Just retType -> liftPrimitive retType
+            _            -> TVoid
 
 -- | Check whether there is an existing type with this name. If not, returns the checked type.
 procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState

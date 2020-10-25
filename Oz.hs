@@ -6,6 +6,12 @@ import Data.Text (Text)
 
 import Common
 
+ozReturnRegister :: Register
+ozReturnRegister = Register 0
+
+ozExtraRegisters :: Int -> Register
+ozExtraRegisters offset = Register (1023 - offset)
+
 convertBool :: Bool -> Text
 convertBool False = "0"
 convertBool True = "1"

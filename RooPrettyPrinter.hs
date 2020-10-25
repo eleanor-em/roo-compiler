@@ -30,12 +30,11 @@ endline = ";\n"
 
 -- | Take the AST of a program and return a pretty print formatted string 
 prettyPrint :: Program -> Text
-prettyPrint (Program records arrays procs funcs) = mconcat
+prettyPrint (Program records arrays procs) = mconcat
     [ foldMap prettyRecord records
     , foldMap prettyArrayDecl arrays
     , if not (null records && null arrays) then "\n" else ""
-    , T.intercalate "\n" (map prettyProcedure procs)
-    , T.intercalate "\n" (map prettyFunction funcs) ]
+    , T.intercalate "\n" (map prettyProcedure procs) ]
 
 -----------------------------------
 -- Main Definitions Pretty Printers 
@@ -58,7 +57,7 @@ prettyArrayDecl (ArrayType size typeName ident) = mconcat
 
 -- | Replaces a Procedure node with its pretty-printed representation
 prettyProcedure :: Procedure -> Text
-prettyProcedure (Procedure _ header varDecls body) = mconcat
+prettyProcedure (Procedure _ header Nothing varDecls body) = mconcat
     [ prettyHeader header
     , "\n"
     , mconcat $ map prettyVarDecls varDecls
@@ -66,9 +65,7 @@ prettyProcedure (Procedure _ header varDecls body) = mconcat
     , prettyAllStatements body 1
     , "}\n" ]
 
--- | Replaces a Procedure node with its pretty-printed representation
-prettyFunction :: Function -> Text
-prettyFunction (Function _ header retType varDecls body) = mconcat
+prettyProcedure (Procedure _ header (Just retType) varDecls body) = mconcat
     [ prettyHeader header
     , " -> "
     , prettyPrimitiveType retType
