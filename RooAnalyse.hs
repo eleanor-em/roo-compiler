@@ -20,6 +20,10 @@ hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
     Just (_, prc) -> null (localParams prc)
     Nothing       -> False
 
+-----------------------------------
+-- Expression Analysis 
+-----------------------------------
+
 -- | An expression paired with its type.
 data TypedExpr = TypedExpr 
     { exprType :: Type
@@ -49,6 +53,7 @@ typecheckExpression table locals expr@(ELvalue (LId (Ident pos ident)))
             Just (_, ty) -> pure $ TypedExpr ty expr
             Nothing      -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
 
+-- Type checks all the different lvalue variations 
 typecheckExpression table locals expr@(ELvalue lvalue) = do
     ty <- analyseLvalue table locals lvalue
     return $ TypedExpr (lvalueType ty) expr
@@ -92,7 +97,8 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
                 , "` vs `"
                 , tshow rtype
                 , "`" ]
-        
+
+    -- We expect arithmetic operations to have integers on either side 
     | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
         ltype <- exprType <$> typecheckExpression table locals lhs
@@ -113,6 +119,8 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
                 Left $ errorPos rPos "cannot compare `string`"
         else
             Left $ errorPos lPos "cannot compare `string`"
+
+        if ltype /= TString && rtype /= TString then 
     where
         checkBoth ty = do
             ltype <- exprType <$> typecheckExpression table locals lhs
@@ -207,6 +215,10 @@ typecheckCall table locals (Ident pos name) args = do
         checkRefArgs _ (RefSymbol _) = False
         checkRefArgs _ _ = True
 
+-----------------------------------
+-- Expression Optimisation 
+-----------------------------------
+
 simplifyExpression :: Expression -> Expression
 simplifyExpression (EUnOp UnNot inner)
     = case simplifyExpression (fromLocated inner) of
@@ -276,6 +288,10 @@ simplifyExpression (EBinOp binop lhs rhs)
             _      -> a == b -- this will only match BinEq
 
 simplifyExpression expr = expr
+
+-----------------------------------
+-- Lvalue Analysis 
+-----------------------------------
 
 data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
                  | TypedValLvalue Type StackSlot Expression Text SourcePos
@@ -414,6 +430,10 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol
             RefSymbol _ -> RefSymbol
+
+-----------------------------------
+-- While Loop Analysis 
+-----------------------------------
 
 -- | Used to detect possible infinite loops.
 lvaluesOf :: Expression -> [Lvalue]
