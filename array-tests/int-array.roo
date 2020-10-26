@@ -1,0 +1,39 @@
+array[10] integer array_t;
+
+
+procedure main ()
+    array_t arr;
+    array_t arr_copy;
+    integer i; 
+{
+    writeln "testing local <- local arrays";
+    
+    while i < 10 do
+        arr[i] <- i;
+        i <- i + 1; 
+    od
+    
+    arr_copy <- arr; 
+
+    write "expecting:";
+    i <- 0;
+
+    while i < 10 do
+        write " ";
+        write arr[i];
+        i <- i + 1;
+    od
+
+    writeln "";
+
+    write "got:";
+
+    i <- 0;
+    while i < 10 do
+        write " ";
+        write arr_copy[i];
+        i <- i + 1;
+    od
+    writeln "";
+}   
+

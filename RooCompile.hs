@@ -363,7 +363,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
             else case expr' of
                 ELvalue lvalue' -> do
                     addErrorsOr (analyseLvalue symbols locals lvalue')
-                                (\sym' -> copyContents sym sym' (sizeof ty'))
+                                (\sym' -> copyContents locals sym sym' (sizeof ty'))
                 _ -> error "internal error: somehow had primitive on rhs when expecting lvalue"
 
 compileStatement locals st@(SRead lvalue) = do
@@ -723,7 +723,7 @@ loadConst (LitInt val) = do
 
 loadConst _ = error "internal error: tried to load Text constant"
 
--- HMMMM incomplete
+-- handle offset needs to be handled per rval and lval 
 loadSlot :: TypedLvalue -> Register -> EitherState BlockState Register 
 loadSlot lval offsetReg = do
     register <- useRegister 
@@ -750,22 +750,28 @@ storeContent lval offsetReg fromRegister = do
             TypedValLvalue {} -> ozLoadAddress 
             TypedRefLvalue {} -> ozLoad
 
-copyContents :: TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
-copyContents lval rval size = do
-    offsetReg <- loadConst (LitInt 0)
-    copyContentsRec lval rval offsetReg size
+copyContents :: LocalTable -> TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
+copyContents locals lval rval size = do
+    -- Calculate the offsets here and then pass through the offsetReg with our own register 
+    offsetReg' <- compileExpr locals (lvalueOffset lval)
+    offsetReg'' <- compileExpr locals (lvalueOffset rval)
+    case (offsetReg', offsetReg'') of 
+        (Just offsetReg', Just offsetReg'') -> copyContentsRec lval rval offsetReg' offsetReg'' size 
+        _ ->  pure $ ()
     
-copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Int -> EitherState BlockState ()
-copyContentsRec _ _ _ 0 = pure $ ()
-copyContentsRec lval rval offsetReg slotsRemaining = do 
+copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Register -> Int -> EitherState BlockState ()
+copyContentsRec _ _ _ _ 0 = pure $ ()
+copyContentsRec lval rval lOffset rOffset slotsRemaining = do 
 
     -- load address from rval into a register 
-    fromRegister <- loadSlot rval offsetReg 
+    fromRegister <- loadSlot rval rOffset 
+    
     -- using the address from before, store content into our lval 
-    storeContent lval offsetReg fromRegister
+    storeContent lval lOffset fromRegister
     incrReg <- loadConst (LitInt 1) 
-    addInstrs $ ozPlus offsetReg offsetReg incrReg 
-    copyContentsRec lval rval offsetReg (slotsRemaining - 1)
+    addInstrs $ ozPlus rOffset rOffset incrReg 
+    addInstrs $ ozPlus lOffset lOffset incrReg
+    copyContentsRec lval rval lOffset rOffset (slotsRemaining - 1)
     
 storeLvalue :: LocalTable -> Lvalue -> Register -> EitherState BlockState ()
 storeLvalue locals lvalue register = do
