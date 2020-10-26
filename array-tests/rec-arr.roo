@@ -132,5 +132,28 @@ procedure main ()
     od
     writeln "";
 
+    writeln "-----testing record <- arr[0]-----";
+
+    point <- arr[0];
+
+    write "expecting: [ ";
+    write arr[0].x;
+    write " ";
+    write arr[0].y;
+    write " ";
+    write arr[0].b;
+    write " ]";
+    writeln "";
+    write "got: ";
+
+    write "[ ";
+    write point.x;
+    write " ";
+    write point.y;
+    write " ";
+    write point.b;
+    write " ]";
+    writeln "";
+
 }   
 
