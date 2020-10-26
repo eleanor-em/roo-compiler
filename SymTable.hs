@@ -74,6 +74,17 @@ data RootTable = RootTable
     , rootFuncPtrs :: FuncPtrTable
     , rootVtable :: Vtable }
 
+instance Semigroup RootTable where
+    (RootTable lAliases lProcs lFuncPtrs lVtable) <> (RootTable rAliases rProcs rFuncPtrs rVtable)
+        = RootTable (Map.union lAliases rAliases)
+                    (Map.union lProcs rProcs)
+                    (Map.union lFuncPtrs rFuncPtrs)
+                    (Map.union lVtable rVtable)
+
+instance Monoid RootTable where
+    mempty = RootTable Map.empty Map.empty Map.empty Map.empty
+
+
 data RecordSymbolState = RecordSymbolState
     { rsOffset :: Int
     , rsTable :: Map Text Field }
@@ -96,26 +107,26 @@ data ProcSymbolState = ProcSymbolState
     , psParams :: [ProcSymbol] }
 
 -- | Analyse a program, and return a symbol table (collecting errors as we go).
-getAllSymbols :: Program -> ([AnalysisError], RootTable)
-getAllSymbols (Program records arrays procs) = do
-    let (errs, records') = execEither (mapM_ symbolsRecord records) Map.empty
-    let symbols = RootTable records' Map.empty Map.empty Map.empty
+getAllSymbols :: Program -> RootTable -> ([AnalysisError], RootTable)
+getAllSymbols (Program records arrays procs) initial = do
+    let (errs, records') = execEither (mapM_ symbolsRecord records) (rootAliases initial)
+    let symbols = initial <> RootTable records' Map.empty Map.empty Map.empty
 
     let (errs', aliases) = execEither (mapM_ (symbolsArray symbols) arrays) records'
-    let symbols = RootTable aliases Map.empty Map.empty Map.empty
+    let symbols = initial <> RootTable aliases Map.empty Map.empty Map.empty
 
     let (errs'', ProcState procs' funcPtrs vtable) = execEither (mapM_ (symbolsProc symbols) procs)
                                                                 initialProcState
 
-    let symbols = RootTable aliases procs' funcPtrs vtable
+    let symbols = initial <>RootTable aliases procs' funcPtrs vtable
     
     (errs <> errs' <> errs'', symbols)
 
 -- | Looks up a possibly-aliased type and ensures it is well-formed.
 lookupType :: RootTable -> LocatedTypeName -> Either [AnalysisError] (SourcePos, Type)
 lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawBoolType)) = Right (pos, TBool)
-
-lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType)) = Right (pos, TInt)
+lookupType _ (LocatedTypeName pos (PrimitiveTypeName RawIntType))  = Right (pos, TInt)
+lookupType _ (LocatedTypeName pos VoidTypeName) = Right (pos, TVoid)
 
 lookupType (RootTable aliases _ _ _) (LocatedTypeName pos (AliasTypeName (Ident _ name))) =
     case Map.lookup name aliases of
@@ -233,24 +244,30 @@ procCheckExisting symbols ty (Ident pos name) current
             (_, ty') <- lookupType symbols ty
             Right ty'
 
+typeOrNever :: Either [AnalysisError] Type -> EitherState ProcSymbolState Type
+typeOrNever result = case result of
+    Left errs -> do
+        addErrors errs
+        return TNever
+    Right ty -> pure ty
+
 -- | Analyse a single formal parameter declaration and extract any symbols.
 symbolsParam :: RootTable -> Parameter -> EitherState ProcSymbolState ()
 symbolsParam symbols param = do
     procSymbols <- getEither
     
-    let result = procCheckExisting symbols ty (Ident pos name) procSymbols
+    ty <- typeOrNever $ procCheckExisting symbols ty (Ident pos name) procSymbols
 
-    addErrorsOr result $ \ty -> do
-        let loc    = location procSymbols
-        let table  = psTable procSymbols
-        let params = psParams procSymbols
-        let ty'    = cons ty
-        let sym = ProcSymbol ty' (StackSlot loc) pos name
+    let loc    = location procSymbols
+    let table  = psTable procSymbols
+    let params = psParams procSymbols
+    let ty'    = cons ty
+    let sym = ProcSymbol ty' (StackSlot loc) pos name
 
-        putEither (procSymbols
-            { psTable = Map.insert name sym table
-            , psParams = params <> [sym]
-            , location = loc + 1 }) -- formal params are either primitive or references => size 1
+    putEither (procSymbols
+        { psTable = Map.insert name sym table
+        , psParams = params <> [sym]
+        , location = loc + 1 }) -- formal params are either primitive or references => size 1
     where
         (cons, ty, pos, name) = case param of
             TypeParam ty (Ident pos name) -> (RefSymbol, ty, pos, name)
@@ -270,13 +287,12 @@ symbolsDecl symbols (VarDecl ty idents) = do
     where
         symbolsDeclSingle (ty, ident@(Ident pos name)) = do
             procSymbols <- getEither
-            let result = procCheckExisting symbols ty ident procSymbols
-            
-            addErrorsOr result $ \ty -> do
-                let loc = location procSymbols
-                let table = psTable procSymbols
-                putEither (procSymbols
-                    { psTable = Map.insert name
-                                           (ProcSymbol (ValSymbol ty) (StackSlot loc) pos name)
-                                           table
-                    , location = loc + sizeof ty })
+            ty <- typeOrNever $ procCheckExisting symbols ty ident procSymbols
+
+            let loc = location procSymbols
+            let table = psTable procSymbols
+            let sym = (ProcSymbol (ValSymbol ty) (StackSlot loc) pos name)
+
+            putEither (procSymbols
+                { psTable = Map.insert name sym table
+                , location = loc + sizeof ty })

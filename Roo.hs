@@ -27,8 +27,12 @@ import Text.Parsec (runParser)
 import Common
 import RooParser (pProgram, ParsedAst)
 import RooPrettyPrinter (prettyPrint)
-import RooCompile (compileProgram)
+import RooCompile (verifyProgram, compileProgramFragment, compileProgram)
 import System.IO (hPrint, stderr)
+
+import RooPreprocessor
+import Data.Maybe (mapMaybe)
+import RooAst
 
 -- | Represents the various command-line arguments
 data Flag = GenAst | PrettyPrint | TestPrettyPrinter | Help
@@ -147,6 +151,9 @@ labelError progName raw (AnalysisNote line col err)
 labelError progName raw (AnalysisWarn line col err)
     = label progName raw line col err (addCol Yellow <> "warning: " <> addCol Reset)
 
+reportErrors :: String -> [String] -> [AnalysisError] -> IO ()
+reportErrors progName raw = mapM_ (labelError progName raw)
+
 -- | Main function of Roo. Grab the flags, and print a usage message if incorrect
 -- or if the help flag is specified. Otherwise, pass arguments to the meat of the
 -- program.
@@ -155,12 +162,33 @@ main = do
     args <- getArgs
     (flags, progNames) <- compilerFlags args
     if null flags then do
-        (ast, raw) <- getAst progNames
+        (ast@(Program recs arrs procs), raw) <- getAst progNames
         -- At this point, progNames is known to be non-empty
         let progName = head progNames
+        let filenameLen = length $ reverse (takeWhile (/= '/') (reverse progName))
+        let path = reverse (drop filenameLen (reverse progName))
 
-        let (errs, output) = compileProgram ast
-        mapM_ (labelError progName raw) errs
+        -- Parse includes
+        let includeFiles = map (path <>) (concat $ mapMaybe extractIncludes raw)
+        (asts, raws) <- unzip <$> mapM (getAst . pure) includeFiles
+
+        -- Syntax-check the includes
+        let errLists = map (fst . compileProgramFragment) asts
+        
+        mapM_ (uncurry3 reportErrors)
+              (zip3 includeFiles raws errLists)
+
+        -- Syntax-check the file itself
+        reportErrors progName raw (verifyProgram ast asts)
+
+        -- Compile the final program
+        let unpackProgram = (\(Program recs arrs procs) -> (recs, arrs, procs))
+        let (recs', arrs', procs') = unzip3 $ map unpackProgram  asts
+        let finalAst = Program (recs <> concat recs')
+                               (arrs <> concat arrs')
+                               (procs <> concat procs')
+        let (errs, output) = compileProgram finalAst
+
         if null errs || all isWarning errs then do
             T.putStr $ mconcat output
             exitSuccess

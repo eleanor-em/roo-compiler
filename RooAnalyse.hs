@@ -337,6 +337,8 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
                         (ProcSymbol (cons sym ty) (symLocation sym) pos (ident <> "[]"))
                         index
 
+                TNever -> Left []
+
                 ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
         Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable `" <> ident <> "`"
     where
@@ -370,6 +372,8 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
 
             return $ cons (fieldTy fieldSym) location offset (recName <> "." <> fldName) fldPos
 
+        TNever -> Left []
+
         _ -> Left $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
 
 analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
@@ -398,6 +402,8 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
                                         (LocatedExpr pos index))
                         _ -> Left $ errorPos fldPos $ "in expression: unknown field name `"
                                                    <> fldName <> "`"
+
+                TNever -> Left []
 
                 ty -> Left $ errorPos arrPos $ "expected array of records, found `"
                                             <> tshow ty <> "`"

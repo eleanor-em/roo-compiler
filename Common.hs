@@ -51,6 +51,9 @@ countWithNoun x noun
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
 
+uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (x, y, z)= f x y z
+
 data Field = Field
     { fieldPos :: SourcePos
     , fieldOffset :: StackSlot
@@ -80,6 +83,7 @@ data Type = TBool
           | TRecord Text (Map Text Field)
           | TFunc [ProcSymType] Type
           | TVoid
+          | TNever
     deriving (Ord, Eq)
 
 instance Show Type where
@@ -89,6 +93,7 @@ instance Show Type where
     show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
     show (TRecord name _) = show name <> "{}"
     show TVoid   = "void"
+    show TNever  = "!"
     show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
 
 liftPrimitive :: PrimitiveType -> Type
@@ -103,6 +108,7 @@ sizeof (TArray _ size ty) = size * sizeof ty
 sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
 sizeof TVoid = 0
 sizeof (TFunc _ _) = 1
+sizeof TNever = 0
 
 isPrimitive :: Type -> Bool
 isPrimitive TBool = True

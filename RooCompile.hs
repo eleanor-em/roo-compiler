@@ -157,24 +157,48 @@ compileLambdasInner statement
 
         compileExprLambdas _ = pure []
 
-compileProgram :: Program -> ([AnalysisError], [Text])
-compileProgram (Program recs arrs procs) = do
-    let procs' = procs <> concatMap compileLambdas procs
-    let (errs, symbols) = getAllSymbols (Program recs arrs (procs'))
+compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
+compileSymbols initial (Program recs arrs procs) = (symbols, errs, procs')
+    where
+        procs'          = procs <> concatMap compileLambdas procs
+        (errs, symbols) = getAllSymbols (Program recs arrs procs') initial
 
-    if not (hasMain symbols) then
-        (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"], [])
-    else do
-        -- Compile all the procedures in our program.
-        let (errs', result) = execEither (mapM_ compileProc procs') (initialBlockState symbols)
-        let output = addHeader symbols (blockInstrs result)
+compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisError], [Text])
+compileWithSymbols symbols errs procs = do
+    -- Compile all the procedures in our program.
+    let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
+    let output = addHeader symbols (blockInstrs result)
 
-        let allErrs = errs <> errs'
+    let allErrs = errs <> errs'
 
-        (allErrs, separate output)
+    (allErrs, separate output)
     where
         separate = map (<> "\n")
         addHeader symbols = ((["call proc_main", "halt"] <> generateVtable symbols) <>)
+
+-- | Compiles a program fragment; that is, a program that may not have a main procedure.
+compileProgramFragment :: Program -> ([AnalysisError], [Text])
+compileProgramFragment program = compileWithSymbols symbols errs procs
+    where
+        (symbols, errs, procs) = compileSymbols mempty program
+
+-- | Returns any syntax errors from a program, drawing symbols from a list of includes.
+verifyProgram :: Program -> [Program] -> [AnalysisError]
+verifyProgram program includes = do
+    -- Extract symbols from the includes...
+    let (symbols, _, _) = unzip3 $ map (compileSymbols mempty) includes
+    -- ...then finish the symbols with the main file
+    let (symbols', errs, procs) = compileSymbols (mconcat symbols) program
+    fst $ compileWithSymbols symbols' errs procs
+
+-- | Compiles a program.
+compileProgram :: Program -> ([AnalysisError], [Text])
+compileProgram program = do
+    let (symbols, errs, procs) = compileSymbols mempty program
+    if not (hasMain symbols) then
+        (errs <> [AnalysisError 0 0 "main procedure with no parameters missing"], [])
+    else
+        compileWithSymbols symbols errs procs
 
 compileProc :: Procedure -> EitherState BlockState ()
 compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
