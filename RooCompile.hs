@@ -17,7 +17,15 @@ import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Text.Parsec.Pos (initialPos)
 
--- | effectively now the global state 
+-- | Global state for the compiler. Stores:
+--   * the root-level symbol table
+--   * the instructions generated so far
+--   * the next unused register
+--   * the next "stack slot" available for saving registers (uses the end of the register list)
+--   * the next unused label index
+--   * whether the context is a tail-call
+--   * the epilogue for this block (used to ensure returns clean up the stack)
+--   * the next unused lambda index
 data BlockState = BlockState
     { blockSyms :: RootTable
     , blockInstrs :: [Text]
@@ -28,21 +36,29 @@ data BlockState = BlockState
     , blockEpilogue :: [Text]
     , blockNextLambda :: Int }
 
+-- | Creates an empty block state from the given symbol table.
 initialBlockState :: RootTable -> BlockState
 initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
 
+-- | Resets the allocation of registers in the state.
 resetBlockRegs :: EitherState BlockState ()
 resetBlockRegs = do
     current <- getEither
     putEither (current { blockNextReg = 0 })
 
+-- | Allocates a new register, and returns the register.
 useRegister :: EitherState BlockState Register
 useRegister = do
     current <- getEither
     let register = blockNextReg current
-    putEither (current { blockNextReg = register + 1})
-    return $ Register register
+    if register >= 1024 then
+        error "internal error: ran out of registers"
+    else do
+        putEither (current { blockNextReg = register + 1})
+        return $ Register register
 
+-- | Pushes a register to the faux-stack formed by the final registers.
+--   Used to save registers between procedure calls on the RHS of statements.
 pushRegister :: Register -> EitherState BlockState ()
 pushRegister register = do
     current <- getEither
@@ -51,6 +67,8 @@ pushRegister register = do
 
     addInstrs $ ozMove (ozExtraRegisters head) register
 
+-- | Pops a register from the faux-stack formed by the final registers.
+--   Used to save registers between procedure calls on the RHS of statements.
 popRegister :: Register -> EitherState BlockState ()
 popRegister register = do
     current <- getEither
@@ -59,11 +77,13 @@ popRegister register = do
 
     addInstrs $ ozMove register (ozExtraRegisters head)
 
+-- | Adds the "this is a tail call" flag to the state.
 setTailCall :: EitherState BlockState ()
 setTailCall = do
     current <- getEither
     putEither (current { isTailCall = True })
 
+-- | Removes the "this is a tail call" flag from the state.
 unsetTailCall :: EitherState BlockState ()
 unsetTailCall = do
     current <- getEither
@@ -73,10 +93,6 @@ unsetTailCall = do
 addInstrs :: [Text] -> EitherState BlockState ()
 addInstrs instrs = addInstrsRaw (map addIndent instrs)
 
-addInstrsMaybe :: Maybe [Text] -> EitherState BlockState ()
-addInstrsMaybe (Just instrs) = addInstrs instrs
-addInstrsMaybe _ = pure ()
-
 -- | Add instructions to the state without indentation.
 addInstrsRaw :: [Text] -> EitherState BlockState ()
 addInstrsRaw instrs = do
@@ -84,6 +100,9 @@ addInstrsRaw instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
+-- | Generates the vtable instructions for the given symbol table. This works by assigning an index
+--   to every procedure, and performing a linear scan on a dedicated register to search for the
+--   appropriate procedure.
 generateVtable :: RootTable -> [Text]
 generateVtable table = mconcat
     [ [ vTableLabel <> ":" ]
@@ -109,10 +128,13 @@ generateVtable table = mconcat
                     , map addIndent (ozCall (makeProcLabel procName))
                     , [ addIndent "return" ] ]
 
+-- | Searches a procedure for any lambda functions, turning them into procedure definitions.
 compileLambdas :: Procedure -> [Procedure]
 compileLambdas (Procedure _ _ _ _ statements)
     = concat $ evalState (mapM compileLambdasInner statements) 0
 
+-- | Search the statement for any lambda functions, and turn them into procedure definitions.
+--   The state encodes the current used index.
 compileLambdasInner :: Statement -> State Int [Procedure]
 compileLambdasInner statement
     = case statement of
@@ -157,12 +179,14 @@ compileLambdasInner statement
 
         compileExprLambdas _ = pure []
 
+-- | Compiles the symbols in a given program, with an initial symbol table provided.
 compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
 compileSymbols initial (Program recs arrs procs) = (symbols, errs, procs')
     where
         procs'          = procs <> concatMap compileLambdas procs
         (errs, symbols) = getAllSymbols (Program recs arrs procs') initial
 
+-- | Compile the program with the given symbol table, previous errors, and procedure list.
 compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisError], [Text])
 compileWithSymbols symbols errs procs = do
     -- Compile all the procedures in our program.
@@ -200,6 +224,7 @@ compileProgram program = do
     else
         compileWithSymbols symbols errs procs
 
+-- | Compiles a procedure definition, updating the state with the instructions and any errors.
 compileProc :: Procedure -> EitherState BlockState ()
 compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statements) = do
     current <- getEither
@@ -243,14 +268,15 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
+-- | Creates a comment by pretty-printing the statement.
+--   Doesn't work nicely for multi-line statements.
 commentStatement :: Statement -> EitherState BlockState ()
-commentStatement (SWhile _ _) = error "commentStatement: cannot handle `while`"
-commentStatement SIfElse {} = error "commentStatement: cannot handle `if...else`"
 commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
 
--- | Allows us to correctly comment `write` and `writeln` statements
---   Special case to handle string literals.
+-- | Compile a `write` statement with a given expression, updating the state with the instructions
+--   and any errors.
 compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
+--   Special case to handle string literals.
 compileWrite _ (LocatedExpr _ (EConst (LitString str)))
     = addInstrs (ozWriteString str)
 
@@ -266,12 +292,52 @@ compileWrite locals expr = do
             op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`"
             in op ty <?> register
 
+-- | Compile a procedure call given the procedure's name and its actual arguments.
+--   Updates the state with the instructions and any errors.
 compileCall :: LocalTable -> Ident -> [LocatedExpr] -> EitherState BlockState (Maybe Register)
 compileCall locals ident args = do
     current <- getEither
     let symbols = blockSyms current
+    let result = do
+        (typedArgs, params, retType) <- typecheckCall symbols locals ident args
+        -- Compile arguments
+        let typedArgs' = zip typedArgs params
+        let currentReg = blockNextReg current
+        let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
+        (registers, final) <- runEither (mapM compileArg typedArgs') next
 
-    case result current symbols of
+        -- handle the case where it's a HOF
+        case lookupProc (blockSyms current) (fromIdent ident) of
+            Just _ ->
+                if isTailCall current then do
+                    let stores = concatMap (uncurry ozStore)
+                                            (zip (map StackSlot [0..]) (catMaybes registers))
+
+                    let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
+                    let nextLambda = blockNextLambda final
+                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
+
+                else do
+                    let moves = concatMap (uncurry ozMove)
+                                            (zip (map Register [0..]) (catMaybes registers))
+
+                    let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
+                    let nextLambda = blockNextLambda final
+                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
+            
+            Nothing -> do
+                (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
+
+                case ptr of 
+                    Just ptr -> do
+                        let moves = concatMap (uncurry ozMove)
+                                                (zip (map Register [0..]) (catMaybes registers))
+                        let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
+                        let nextLambda = blockNextLambda final'
+                        return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
+                    Nothing -> error "internal error: did not catch all HOF call cases :("
+
+    case result of
         Left errs    -> do
             addErrors errs
             return Nothing
@@ -283,54 +349,14 @@ compileCall locals ident args = do
             return $ case retType of
                 TVoid -> Nothing
                 _     -> Just ozReturnRegister
-    
     where
-        result current symbols = do
-            (typedArgs, params, retType) <- typecheckCall symbols locals ident args
-            -- Compile arguments
-            let typedArgs' = zip typedArgs params
-            let currentReg = blockNextReg current
-            let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
-            (registers, final) <- runEither (mapM compileArg typedArgs') next
+        -- | Compile the argument, loading the address for refsand the value for vals
+        compileArg (TypedExpr _ (ELvalue lvalue), RefSymbol _)
+            = loadAddress locals lvalue
+        compileArg (TypedExpr _ expr, _)
+            = compileExpr locals (simplifyExpression expr)
 
-            -- handle the case where it's a HOF
-            case lookupProc (blockSyms current) (fromIdent ident) of
-                Just _ ->
-                    if isTailCall current then do
-                        let stores = concatMap (uncurry ozStore)
-                                               (zip (map StackSlot [0..]) (catMaybes registers))
-
-                        let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
-                        let nextLambda = blockNextLambda final
-                        return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
-
-                    else do
-                        let moves = concatMap (uncurry ozMove)
-                                              (zip (map Register [0..]) (catMaybes registers))
-
-                        let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
-                        let nextLambda = blockNextLambda final
-                        return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
-                
-                Nothing -> do
-                    (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
-
-                    case ptr of 
-                        Just ptr -> do
-                            let moves = concatMap (uncurry ozMove)
-                                                  (zip (map Register [0..]) (catMaybes registers))
-                            let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
-                            let nextLambda = blockNextLambda final'
-                            return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
-                        Nothing -> error "internal error: did not catch all HOF call cases :("
-
-            where
-                -- | Compile the argument, loading the address for refsand the value for vals
-                compileArg (TypedExpr _ (ELvalue lvalue), RefSymbol _)
-                    = loadAddress locals lvalue
-                compileArg (TypedExpr _ expr, _)
-                    = compileExpr locals (simplifyExpression expr)
-
+-- | Compiles a single statement, updating the state with the instructions and any errors.
 compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
 -- | write expr;
 compileStatement locals st@(SWrite expr) = do
@@ -820,7 +846,7 @@ addIndent str
     | otherwise         = "    " <> str
 
 makeComment :: Text -> [Text]
-makeComment str = ["# " <> T.strip str]
+makeComment str = ["# " <> T.replace "\n" "" str]
 
 makeProcLabel :: Text -> Text
 makeProcLabel = ("proc_" <>)
