@@ -2,7 +2,6 @@
 
 module SymTable where
 
-import Debug.Trace (trace)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 

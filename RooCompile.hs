@@ -201,11 +201,16 @@ compileProgram program = do
         compileWithSymbols symbols errs procs
 
 compileProc :: Procedure -> EitherState BlockState ()
-compileProc (Procedure _ (ProcHeader (Ident _ procName) _) _ _ statements) = do
+compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statements) = do
     current <- getEither
 
     case lookupProc (blockSyms current) procName of
         Just (_, locals) -> do
+            -- Check that non-void procedures always return a value
+            unless (retType == VoidTypeName || any returnsValue statements)
+                   (addErrors $ warnPos pos
+                   "control may reach the end of the procedure without returning a value")
+
             let stackSize = localStackSize locals
             let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
             let epilogue = (if stackSize > 0 then ozPopStackFrame  stackSize else [])

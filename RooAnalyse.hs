@@ -151,6 +151,12 @@ typecheckExpression table _ expr@(ELambda params retType _ _) = do
             _                    -> TVoid
     return $ TypedExpr (TFunc paramTys retType') expr
 
+-- | Returns True if the statement *always* returns a value.
+returnsValue :: Statement -> Bool
+returnsValue (SReturn _) = True
+returnsValue (SIfElse _ bodyIf bodyElse) = any returnsValue bodyIf && any returnsValue bodyElse
+returnsValue _ = False
+
 typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
                            -> Either [AnalysisError] ([TypedExpr], [ProcSymType], Type)
 typecheckCall table locals (Ident pos name) args = do
@@ -162,14 +168,14 @@ typecheckCall table locals (Ident pos name) args = do
             _                       -> Left $ errorPos pos $ "unknown procedure `" <> name <> "`"
 
     -- Check # arguments = # parameters
-    unless  (length args == length params)
-            (let err  = mconcat
-                    [ "`", name, "` expects ", countWithNoun (length params) "parameter"
-                    , " but was given ", tshow (length args) ]
-                 note = "`" <> name <> "` declared here:" in
-                case targetPos of
-                    Just targetPos -> Left $ errorWithNote pos err targetPos note
-                    Nothing        -> Left $ errorPos pos err)
+    unless (length args == length params)
+           (let err  = mconcat
+                   [ "`", name, "` expects ", countWithNoun (length params) "parameter"
+                   , " but was given ", tshow (length args) ]
+                note = "`" <> name <> "` declared here:" in
+               case targetPos of
+                   Just targetPos -> Left $ errorWithNote pos err targetPos note
+                   Nothing        -> Left $ errorPos pos err)
 
     -- Type-check arguments
     typedArgs <- concatEither $ map ((pure <$>) . analyseExpression table locals)
@@ -179,13 +185,9 @@ typecheckCall table locals (Ident pos name) args = do
     let mismatched = filter (\((_, a), b) -> exprType a /= procSymType b)
                             (zip (enumerate typedArgs) params)
 
-    let reportErr ((i, expr), symbol) = let err  = mconcat [ "in argument: expecting `"
-                                                , tshow $ procSymType symbol
-                                                , "`, found `"
-                                                , tshow $ exprType expr
-                                                , "`" ] in
-            Left $ errorPos (locate $ args !! i) err
-
+    let reportErr ((i, expr), symbol) = Left $ errorPos (locate $ args !! i) $
+            "in argument: expecting `" <> tshow (procSymType symbol) <> "`, found `"
+                                       <> tshow (exprType expr) <> "`"
     concatEither $ map reportErr mismatched
 
     -- Check reference args are filled with lvalues
@@ -193,7 +195,6 @@ typecheckCall table locals (Ident pos name) args = do
                             (zip (enumerate typedArgs) params)
 
     let reportErr ((i, _), _) = Left $ errorPos (locate $ args !! i) "in argument: expecting lvalue"
-
     concatEither $ map reportErr mismatched
 
     return (typedArgs, params, retType)
@@ -441,4 +442,3 @@ modifiesLvalue lval (SWhile _ body)
     = any (modifiesLvalue lval) body
 
 modifiesLvalue _ _ = False
-
