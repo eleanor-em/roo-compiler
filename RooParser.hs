@@ -55,8 +55,7 @@ scanner = Q.makeTokenParser
     --  due to naming conflicts between files and modules. It's clearer (IMO) this way.
     , Q.reservedNames   = [ "read", "write", "writeln", "call", "if", "then"
                           , "else", "fi", "procedure", "array", "record", "while"
-                          , "do", "od", "integer", "boolean", "val", "true", "false"
-                          , "return", "lambda" ]
+                          , "do", "od", "integer", "boolean", "val", "true", "false" ]
     , Q.reservedOpNames = [ "or", "and", "not", "=", "!=", "<", "<=", ">"
                           , ">=", "+", "-", "*", "/", "<-", ".", "->" ]
     , Q.caseSensitive   = True
@@ -244,8 +243,8 @@ pVarDecl =
 -- | Parses any atomic statement and returns a Statement node if accepted 
 pAtomicStatement :: Parser Statement
 pAtomicStatement = choice
-    [ pWriteStatement, pWriteLnStatement, pReadStatement
-    , pAssignStatement, pCallStatement, pReturnStatement] <* semi
+    [ try pReturnStatement, pWriteStatement, pWriteLnStatement
+    , pReadStatement, pAssignStatement, pCallStatement] <* semi
 
 -- | Parses an assignment statement and returns a Statement node if accepted 
 pAssignStatement :: Parser Statement
@@ -292,8 +291,19 @@ pReadStatement :: Parser Statement
 pReadStatement =
     SRead <$> (reserved "read" *> pLvalue)
 
+-- | Hacky way to parse "return" without making it a reserved keyword.
+pReturnKeyword :: Parser ()
+pReturnKeyword = do
+    lexeme $ char 'r'
+    char 'e'
+    char 't'
+    char 'u'
+    char 'r'
+    lexeme $ char 'n'
+    return ()
+
 pReturnStatement :: Parser Statement
-pReturnStatement = SReturn <$> (reserved "return" *> pExpression)
+pReturnStatement = SReturn <$> (pReturnKeyword *> pExpression)
 
 -- | Parses an if statement and returns a Statement node if accepted 
 pIfStatement :: Parser Statement 
@@ -417,10 +427,21 @@ pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
 pFuncCall :: Parser LocatedExpr
 pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` comma))
 
+-- | Hacky way to parse "lambda" without making it a reserved keyword.
+pLambdaKeyword :: Parser ()
+pLambdaKeyword = do
+    lexeme $ char 'l'
+    char 'a'
+    char 'm'
+    char 'b'
+    char 'd'
+    lexeme $ char 'a'
+    return ()
+
 pLambda :: Parser LocatedExpr
 pLambda = do
     pos <- sourcePos
-    reserved "lambda"
+    pLambdaKeyword
     params <- parens (pFormalParam `sepBy` comma)
     reservedOp "->"
     retType <- option VoidTypeName (PrimitiveTypeName <$> pPrimitiveType)
