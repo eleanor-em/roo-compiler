@@ -104,7 +104,7 @@ getAst progNames =
         else do
             input <- readFile progName
 
-            let output = runParser pProgram 0 "" input
+            let output = runParser pProgram 0 "" (removeIncludes input)
             case output of
                 Right ast -> return (ast, lines input)
                 Left  err -> do
@@ -174,7 +174,6 @@ main = do
 
         -- Syntax-check the includes
         let errLists = map (fst . compileProgramFragment) asts
-        
         mapM_ (uncurry3 reportErrors)
               (zip3 includeFiles raws errLists)
 
