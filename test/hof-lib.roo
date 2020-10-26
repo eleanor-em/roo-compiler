@@ -1,0 +1,20 @@
+array[10] integer array_t;
+
+procedure for_each (procedure (integer val x) consumer, array_t arr)
+    integer i;
+{
+    while i < 10 do
+        call consumer(arr[i]);
+        i <- i + 1;
+    od
+}
+
+procedure map (procedure (integer val x) -> integer unary_op, array_t in, array_t out)
+    integer i;
+    integer x;
+{
+    while i < 10 do
+        out[i] <- unary_op(in[i]);
+        i <- i + 1;
+    od
+}

@@ -1,0 +1,15 @@
+@include "hof-lib.roo"
+
+procedure main ()
+    array_t arr;
+    integer i;
+{
+    while i < 10 do
+        arr[i] <- i;
+        i <- i + 1;
+    od
+
+    call map(lambda (integer val x) -> integer { return x * x; }, arr, arr);
+    call for_each(lambda (integer val x) -> { write x; write " "; }, arr);
+    writeln "";
+}
