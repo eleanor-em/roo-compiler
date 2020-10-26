@@ -289,7 +289,8 @@ compileWrite locals expr = do
 
         let op TInt  = addInstrs . ozWriteInt
             op TBool = addInstrs . ozWriteBool
-            op _     = error $ "internal error: attempted to write invalid type `" <> show ty <> "`"
+            op _     = error $ "internal error: attempted to write invalid type "
+                            <> T.unpack (backticks ty)
             in op ty <?> register
 
 -- | Compile a procedure call given the procedure's name and its actual arguments.
@@ -311,7 +312,7 @@ compileCall locals ident args = do
             Just _ ->
                 if isTailCall current then do
                     let stores = concatMap (uncurry ozStore)
-                                            (zip (map StackSlot [0..]) (catMaybes registers))
+                                           (zip (map StackSlot [0..]) (catMaybes registers))
 
                     let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
                     let nextLambda = blockNextLambda final
@@ -319,7 +320,7 @@ compileCall locals ident args = do
 
                 else do
                     let moves = concatMap (uncurry ozMove)
-                                            (zip (map Register [0..]) (catMaybes registers))
+                                          (zip (map Register [0..]) (catMaybes registers))
 
                     let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
                     let nextLambda = blockNextLambda final
@@ -331,7 +332,7 @@ compileCall locals ident args = do
                 case ptr of 
                     Just ptr -> do
                         let moves = concatMap (uncurry ozMove)
-                                                (zip (map Register [0..]) (catMaybes registers))
+                                              (zip (map Register [0..]) (catMaybes registers))
                         let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
                         let nextLambda = blockNextLambda final'
                         return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
@@ -386,7 +387,7 @@ compileStatement locals st@(SAssign lvalue expr) = do
         let ty = lvalueType sym
         if ty /= ty' then
             addErrors $ errorPos (locate expr)
-                                 ("cannot assign `" <> tshow ty' <> "` to `" <> tshow ty <> "`")
+                                 ("cannot assign " <> backticks ty' <> " to " <> backticks ty)
         else
             if isPrimitive ty || isFunction ty then do
                 register <- compileExpr locals (simplifyExpression expr')
@@ -411,10 +412,8 @@ compileStatement locals st@(SRead lvalue) = do
         case ty of
             TInt  -> addInstrs ozReadInt
             TBool -> addInstrs ozReadBool
-            _     -> do
-                let err = "expecting `integer` or `boolean` on RHS of `read`, found `"
-                       <> tshow ty <> "`" in
-                    addErrors $ errorPos (lvaluePos sym) err
+            _     -> addErrors $ errorPos (lvaluePos sym) $
+                "expecting `integer` or `boolean` on RHS of `read`, found `" <> backticks ty
 
         storeLvalue locals lvalue (Register 0)
 
@@ -451,7 +450,7 @@ compileStatement locals (SIf expr statements) = do
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
                 Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found `" <> tshow ty <> "`")
+                                ("expecting `boolean`, found " <> backticks ty)
             else
                 return expr'
 
@@ -491,7 +490,7 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
                 Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found `" <> tshow ty <> "`")
+                                ("expecting `boolean`, found " <> backticks ty)
             else
                 return expr'
 
@@ -539,7 +538,7 @@ compileStatement locals (SWhile expr statements) = do
             -- condition expression is incorrectly typed 
             if ty /= TBool then 
                 Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found `" <> tshow ty <> "`")
+                                ("expecting `boolean`, found " <> backticks ty)
             else
                 return expr'
 
@@ -554,8 +553,8 @@ compileStatement locals st@(SReturn expr) = do
 
         if ty /= ty' then
             addErrors $ errorPos (locate expr)
-                                 ("expecting `" <> tshow ty' <> "` on RHS of `return`, found `"
-                                                <> tshow ty <> "`")
+                                 ("expecting " <> backticks ty' <> " on RHS of `return`, found "
+                                               <> backticks ty)
         else do
             let compile = do
                 register <- compileExpr locals (simplifyExpression expr')

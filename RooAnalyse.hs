@@ -37,7 +37,7 @@ typecheckArrayIndex table locals (LocatedExpr pos expr) = do
     case exprType indexTy of
         TInt -> return ()
         ty -> Left $ errorPos pos $
-            "expected index expression of type `integer`, found `" <> tshow ty <> "`"
+            "expected index expression of type `integer`, found " <> backticks ty
 
 -- | Type-checks an expression, and returns the expression annotated with its type
 --   if successful.
@@ -47,7 +47,8 @@ typecheckExpression table locals expr@(ELvalue (LId (Ident pos ident)))
         Just sym -> pure $ TypedExpr (procSymType $ symType sym) expr
         Nothing  -> case Map.lookup ident (rootFuncPtrs table) of
             Just (_, ty) -> pure $ TypedExpr ty expr
-            Nothing      -> Left $ errorPos pos $ "in expression: unknown variable `" <> ident <> "`"
+            Nothing      -> Left $ errorPos pos $
+                "in expression: unknown variable " <> backticks ident
 
 typecheckExpression table locals expr@(ELvalue lvalue) = do
     ty <- analyseLvalue table locals lvalue
@@ -64,14 +65,14 @@ typecheckExpression table locals expr@(EUnOp UnNot (LocatedExpr pos inner)) = do
     exprType <- exprType <$> typecheckExpression table locals inner
     case exprType of
         TBool -> pure $ TypedExpr TBool expr
-        ty    -> Left $ errorPos pos $ "expecting `boolean`, found `" <> tshow ty <> "`"
+        ty    -> Left $ errorPos pos $ "expecting `boolean`, found " <> backticks ty
 
 -- Integer negations must check whether the inner expression is an integer.
 typecheckExpression table locals expr@(EUnOp UnNegate (LocatedExpr pos inner)) = do
     exprType <- exprType <$> typecheckExpression table locals inner
     case exprType of
         TInt -> pure $ TypedExpr TInt expr
-        ty   -> Left $ errorPos pos $ "expecting `integer`, found `" <> tshow ty <> "`"
+        ty   -> Left $ errorPos pos $ "expecting `integer`, found " <> backticks ty
 
 -- For binary expressions there are three cases:
 --  1. The operator is a boolean operator (in which case both sides must be boolean)
@@ -87,11 +88,10 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
             pure    $ TypedExpr TBool expr
         else
             Left $ errorPos lPos $ mconcat
-                [ "operands do not match: `"
-                , tshow ltype
-                , "` vs `"
-                , tshow rtype
-                , "`" ]
+                [ "operands do not match: "
+                , backticks ltype
+                , " vs "
+                , backticks rtype ]
         
     | op `elem` [BinPlus, BinMinus, BinTimes, BinDivide]        = checkBoth TInt
     | otherwise = do
@@ -104,11 +104,10 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
                     pure    $ TypedExpr ltype expr
                 else
                     Left $ errorPos lPos $ mconcat
-                        [ "operands do not match: `"
-                        , tshow ltype
-                        , "` vs `"
-                        , tshow rtype
-                        , "`" ]
+                        [ "operands do not match: "
+                        , backticks ltype
+                        , " vs "
+                        , backticks rtype ]
             else
                 Left $ errorPos rPos "cannot compare `string`"
         else
@@ -120,25 +119,23 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
             
             if ltype == ty then
                 if rtype == ty then
-                    pure    $ TypedExpr ty expr
+                    pure $ TypedExpr ty expr
                 else
                     Left $ errorPos rPos $ mconcat
-                        [ "expecting `"
-                        , tshow ty
-                        , "` on RHS of `"
-                        , prettyBinOp op
-                        , "`, found `"
-                        , tshow rtype
-                        , "`" ]
+                        [ "expecting "
+                        , backticks ty
+                        , " on RHS of "
+                        , backticks $ prettyBinOp op
+                        , ", found "
+                        , backticks rtype ]
             else
                 Left $ errorPos lPos $ mconcat
-                 [ "expecting `"
-                 , tshow ty
-                 , "` on LHS of `"
-                 , prettyBinOp op
-                 , "`, found `"
-                 , tshow ltype
-                 , "`" ]
+                 [ "expecting "
+                 , backticks ty
+                 , " on LHS of "
+                 , backticks $ prettyBinOp op
+                 , ", found "
+                 , backticks ltype ]
 
 typecheckExpression table locals expr@(EFunc func args) = do
     (_, _, ty) <- typecheckCall table locals func args
@@ -165,14 +162,13 @@ typecheckCall table locals (Ident pos name) args = do
 
         Nothing -> case rawSymType <$> Map.lookup name (localSymbols locals) of
             Just (TFunc params ret) -> pure (params, ret, Nothing)
-            _                       -> Left $ errorPos pos $ "unknown procedure `" <> name <> "`"
+            _                       -> Left $ errorPos pos $ "unknown procedure " <> backticks name
 
     -- Check # arguments = # parameters
     unless (length args == length params)
-           (let err  = mconcat
-                   [ "`", name, "` expects ", countWithNoun (length params) "parameter"
-                   , " but was given ", tshow (length args) ]
-                note = "`" <> name <> "` declared here:" in
+           (let err  = backticks name <> " expects " <> countWithNoun (length params) "parameter"
+                                                     <> " but was given " <> tshow (length args)
+                note = backticks name <> " declared here:" in
                case targetPos of
                    Just targetPos -> Left $ errorWithNote pos err targetPos note
                    Nothing        -> Left $ errorPos pos err)
@@ -186,8 +182,8 @@ typecheckCall table locals (Ident pos name) args = do
                             (zip (enumerate typedArgs) params)
 
     let reportErr ((i, expr), symbol) = Left $ errorPos (locate $ args !! i) $
-            "in argument: expecting `" <> tshow (procSymType symbol) <> "`, found `"
-                                       <> tshow (exprType expr) <> "`"
+            "in argument: expecting " <> backticks (procSymType symbol) <> ", found "
+                                      <> backticks (exprType expr)
     concatEither $ map reportErr mismatched
 
     -- Check reference args are filled with lvalues
@@ -220,7 +216,7 @@ simplifyExpression (EUnOp UnNegate inner)
 
 simplifyExpression (EBinOp BinAnd lhs rhs)
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
-        -- As per Piazza, eliminate below short-circuiting. :(
+        -- As per Piazza, eliminate below short-circuiting.
             
         -- (EConst (LitBool False), _) -> EConst (LitBool False)
         -- (_ , EConst (LitBool False)) -> EConst (LitBool False)
@@ -229,7 +225,7 @@ simplifyExpression (EBinOp BinAnd lhs rhs)
 
 simplifyExpression (EBinOp BinOr lhs rhs)
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
-        -- As per Piazza, eliminate below short-circuiting. :(
+        -- As per Piazza, eliminate below short-circuiting.
             
         -- (EConst (LitBool True), _) -> EConst (LitBool True)
         -- (_ , EConst (LitBool True)) -> EConst (LitBool True)
@@ -316,7 +312,7 @@ noOffset = EConst (LitInt 0)
 analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
 analyseLvalue _ locals (LId (Ident pos name)) = do
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
-                    (Left $ errorPos pos $ "in statement: unknown variable `" <> name <> "`")
+                    (Left $ errorPos pos $ "in statement: unknown variable " <> backticks name)
     return $ symToTypedLvalue sym noOffset
 
 analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
@@ -340,8 +336,8 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
 
                 TNever -> Left []
 
-                ty -> Left $ errorPos pos $ "expected array type, found `" <> tshow ty <> "`"
-        Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable `" <> ident <> "`"
+                ty -> Left $ errorPos pos $ "expected array type, found " <> backticks ty
+        Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable " <> backticks ident
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol
@@ -349,8 +345,8 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
 
 analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
     recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
-                       (Left $ errorPos recPos $ "in statement: unknown variable `"
-                                              <> recName <> "`")
+                       (Left $ errorPos recPos $ "in statement: unknown variable "
+                                               <> backticks recName)
 
     let ty = rawSymType recSym
 
@@ -358,7 +354,7 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
         TRecord _ fieldMap -> do
             fieldSym <- unwrapOr (Map.lookup fldName fieldMap)
                                  (Left $ errorWithNote
-                                    fldPos ("in statement: unknown field `" <> recName <> "`")
+                                    fldPos ("in statement: unknown field " <> backticks recName)
                                     (symPos recSym) "record declared here:")
             -- If the record is of value kind, we can compute the offset statically.
             -- Otherwise, we must compute it dynamically.
@@ -375,7 +371,7 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
 
         TNever -> Left []
 
-        _ -> Left $ errorPos recPos $ "expected variable of record type, found `" <> tshow ty <> "`"
+        _ -> Left $ errorPos recPos $ "expected variable of record type, found " <> backticks ty
 
 analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
     = case Map.lookup arrName (localSymbols locals) of
@@ -401,15 +397,14 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
                                 (EBinOp BinPlus
                                         (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
                                         (LocatedExpr pos index))
-                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name `"
-                                                   <> fldName <> "`"
+                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name "
+                                                   <> backticks fldName
 
                 TNever -> Left []
 
-                ty -> Left $ errorPos arrPos $ "expected array of records, found `"
-                                            <> tshow ty <> "`"
-        Nothing  -> Left $ errorPos arrPos $ "in array record expression: unknown variable `"
-                                          <> arrName <> "`"
+                ty -> Left $ errorPos arrPos $ "expected array of records, found " <> backticks ty
+        Nothing  -> Left $ errorPos arrPos $ "in array record expression: unknown variable "
+                                          <> backticks arrName
     where
         cons ty = case symType ty of
             ValSymbol _ -> ValSymbol

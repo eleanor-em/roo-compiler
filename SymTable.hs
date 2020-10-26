@@ -131,7 +131,7 @@ lookupType (RootTable aliases _ _ _) (LocatedTypeName pos (AliasTypeName (Ident 
     case Map.lookup name aliases of
         Just (_, ty) -> Right (pos, ty)
         Nothing      -> Left  $ errorPos pos $
-            "unrecognised type alias `" <> name <> "`"
+            "unrecognised type alias " <> backticks name
 
 lookupType table (LocatedTypeName pos (FunctionTypeName params retType)) = do
     paramTys <- mapM (toProcSym table) params
@@ -150,7 +150,7 @@ symbolsArray rootSyms (ArrayType size ty (Ident pos name)) = do
     where
         checkExisting table = case Map.lookup name table of
             Just (otherPos, _) -> Left $
-                errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
+                errorWithNote pos      ("redeclaration of type alias " <> backticks name)
                               otherPos "first declared here:"
             Nothing -> do
                 (_, ty') <- lookupType rootSyms ty
@@ -170,7 +170,7 @@ symbolsRecord (Record fieldDecls (Ident pos name)) = do
 
     case Map.lookup name table of
         Just (otherPos, _) -> addErrors $
-                errorWithNote pos      ("redeclaration of type alias `" <> name <> "`")
+                errorWithNote pos      ("redeclaration of type alias " <> backticks name)
                               otherPos "first declared here:"
         Nothing -> putEither $ Map.insert name (pos, TRecord name (rsTable final)) table
 
@@ -183,7 +183,7 @@ checkFieldDecl (FieldDecl ty (Ident pos name)) = do
     
     case Map.lookup name table of 
         Just (Field otherPos _ _) -> addErrors $
-            errorWithNote pos      ("redeclaration of field name `" <> name <> "`")
+            errorWithNote pos      ("redeclaration of field name " <> backticks name)
                           otherPos "first declared here:"
         Nothing -> putEither $ current
             { rsOffset = offset + sizeof (liftPrimitive ty)
@@ -210,7 +210,7 @@ symbolsProc symbols (Procedure _ (ProcHeader (Ident pos name) params) retType de
     -- Check if there is another procedure with this name
     case Map.lookup name table of
         Just (otherPos, _) -> addErrors $
-                errorWithNote pos      ("redeclaration of procedure `" <> name <> "`")
+                errorWithNote pos      ("redeclaration of procedure " <> backticks name)
                               otherPos  "first declared here:"
         _ -> do
             let myProc = (pos, LocalTable params' procs' retType' name)
@@ -237,7 +237,7 @@ procCheckExisting :: RootTable -> LocatedTypeName -> Ident -> ProcSymbolState
 procCheckExisting symbols ty (Ident pos name) current
     = case Map.lookup name (psTable current) of
         Just other -> let otherPos = symPos other in Left $
-                errorWithNote pos      ("redeclaration of local variable `" <> name <> "`")
+                errorWithNote pos      ("redeclaration of local variable " <> backticks name)
                               otherPos "first declared here:"
         Nothing -> do
             (_, ty') <- lookupType symbols ty

@@ -11,6 +11,7 @@ import Data.Map.Strict (Map)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import RooAst
+import Data.String (IsString)
 
 newtype Register = Register Int
     deriving Eq
@@ -42,6 +43,9 @@ tshow = T.pack . show
 tshowBool :: Bool -> Text
 tshowBool True = "true"
 tshowBool False = "false"
+
+backticks :: (Show a) => a -> Text
+backticks x = "`" <> tshow x <> "`"
 
 countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun

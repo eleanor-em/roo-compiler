@@ -14,12 +14,6 @@ procedure main ()
     writeln "";
 }
 
-procedure print_sep (integer val x)
-{
-    write x;
-    write " ";
-}
-
 procedure for_each (procedure (integer val x) consumer, array_t arr)
     integer i;
 {
