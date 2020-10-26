@@ -2,7 +2,6 @@
 
 module RooCompile where
 
-import Debug.Trace (trace)
 import Data.Maybe (catMaybes, fromJust)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -248,8 +247,10 @@ compileCall locals ident args = do
             addErrors errs
             return Nothing
 
-        Right (instrs, retType) -> do
+        Right (instrs, retType, nextLambda) -> do
             addInstrsRaw instrs
+            current' <- getEither
+            putEither (current' { blockNextLambda = nextLambda })
             return $ case retType of
                 TVoid -> Nothing
                 _     -> Just ozReturnRegister
@@ -268,17 +269,19 @@ compileCall locals ident args = do
                 Just _ ->
                     if isTailCall current then do
                         let stores = concatMap (uncurry ozStore)
-                                            (zip (map StackSlot [0..]) (catMaybes registers))
+                                               (zip (map StackSlot [0..]) (catMaybes registers))
 
                         let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
-                        return (blockInstrs final <> map addIndent instrs, retType)
+                        let nextLambda = blockNextLambda final
+                        return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
 
                     else do
                         let moves = concatMap (uncurry ozMove)
-                                            (zip (map Register [0..]) (catMaybes registers))
+                                              (zip (map Register [0..]) (catMaybes registers))
 
                         let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
-                        return (blockInstrs final <> map addIndent instrs, retType)
+                        let nextLambda = blockNextLambda final
+                        return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
                 
                 Nothing -> do
                     (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
@@ -286,9 +289,10 @@ compileCall locals ident args = do
                     case ptr of 
                         Just ptr -> do
                             let moves = concatMap (uncurry ozMove)
-                                            (zip (map Register [0..]) (catMaybes registers))
+                                                  (zip (map Register [0..]) (catMaybes registers))
                             let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
-                            return (blockInstrs final' <> map addIndent instrs, retType)
+                            let nextLambda = blockNextLambda final'
+                            return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
                         Nothing -> error "internal error: did not catch all HOF call cases :("
 
             where
@@ -587,10 +591,11 @@ compileExpr locals (EFunc func args) = do
         Just _   -> return $ Just result
         _        -> return Nothing
 
-compileExpr locals (ELambda _ _ _ _) = do
+compileExpr locals ELambda {} = do
     current <- getEither
     let nextLambda = blockNextLambda current
     putEither ( current { blockNextLambda = nextLambda + 1 })
+    addInstrs $ makeComment ("call lambda " <> lambdaLabel nextLambda)
     compileExpr locals (ELvalue (LId (Ident (initialPos "") (lambdaLabel nextLambda))))
 
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)

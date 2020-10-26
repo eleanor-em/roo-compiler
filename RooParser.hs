@@ -56,7 +56,7 @@ scanner = Q.makeTokenParser
     , Q.reservedNames   = [ "read", "write", "writeln", "call", "if", "then"
                           , "else", "fi", "procedure", "array", "record", "while"
                           , "do", "od", "integer", "boolean", "val", "true", "false"
-                          , "return" ]
+                          , "return", "lambda" ]
     , Q.reservedOpNames = [ "or", "and", "not", "=", "!=", "<", "<=", ">"
                           , ">=", "+", "-", "*", "/", "<-", ".", "->" ]
     , Q.caseSensitive   = True
@@ -420,6 +420,7 @@ pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` com
 pLambda :: Parser LocatedExpr
 pLambda = do
     pos <- sourcePos
+    reserved "lambda"
     params <- parens (pFormalParam `sepBy` comma)
     reservedOp "->"
     retType <- option VoidTypeName (PrimitiveTypeName <$> pPrimitiveType)
