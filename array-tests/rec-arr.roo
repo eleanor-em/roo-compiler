@@ -1,0 +1,136 @@
+record
+    {
+        integer x;
+        integer y;
+        boolean b
+    }  p_t;
+
+array[2] p_t array_t; 
+
+procedure main ()
+    p_t point;
+    p_t point_copy;
+    array_t arr; 
+    array_t arr2;
+
+    integer i; 
+    integer j;
+{
+    writeln "-----testing record <- record-----";
+    
+    point.x <- -10;
+    point.y <- 100;
+
+    point_copy <- point; 
+
+    write "expecting: ";
+    write point.x;
+    write " ";
+    write point.y;
+    write " ";
+    write point.b;
+    writeln "";
+    
+    write "got: ";
+    write point_copy.x;
+    write " ";
+    write point_copy.y;
+    write " ";
+    write point_copy.b;
+    writeln "";
+
+    writeln "-----testing arr[i] <- record-----"; 
+    i <- 0;
+    while i < 2 do 
+        arr[i] <- point;
+        i <- i + 1; 
+    od
+
+    write "expecting: ";
+    i <- 0 ;
+    while i < 2 do 
+        write "[ ";
+        write point.x;
+        write " ";
+        write point.y;
+        write " ";
+        write point.b;
+        write " ]";
+        i <- i + 1;
+    od
+    writeln "";
+
+    write "got: ";
+    i <- 0 ;
+    while i < 2 do 
+        write "[ ";
+        write arr[i].x;
+        write " ";
+        write arr[i].y;
+        write " ";
+        write arr[i].b;
+        write " ]";
+        i <- i + 1;
+    od
+    writeln "";
+
+    writeln "-----testing arr[i] <- arr[i]-----";
+
+    arr2[1].x <- 1;
+    arr2[1].y <- 2;
+
+    arr[0] <- arr2[1];
+
+    write "expecting: [ ";
+    write arr2[1].x;
+    write " ";
+    write arr2[1].y;
+    write " ";
+    write arr2[1].b;
+    write " ]";
+    writeln "";
+    write "got: ";
+
+    write "[ ";
+    write arr[0].x;
+    write " ";
+    write arr[0].y;
+    write " ";
+    write arr[0].b;
+    write " ]";
+    writeln "";
+
+    writeln "-----testing arr <- arr-----";
+
+    arr2 <- arr; 
+    
+    write "expecting: ";
+    i <- 0 ;
+    while i < 2 do 
+        write "[ ";
+        write arr[i].x;
+        write " ";
+        write arr[i].y;
+        write " ";
+        write arr[i].b;
+        write " ]";
+        i <- i + 1;
+    od
+    writeln "";
+
+        write "got: ";
+    i <- 0 ;
+    while i < 2 do 
+        write "[ ";
+        write arr2[i].x;
+        write " ";
+        write arr2[i].y;
+        write " ";
+        write arr2[i].b;
+        write " ]";
+        i <- i + 1;
+    od
+    writeln "";
+
+}   
+

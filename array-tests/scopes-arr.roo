@@ -1,0 +1,64 @@
+array[10] integer array_t;
+
+
+procedure copy (array_t x, array_t y) 
+    integer i;
+{
+    
+    write "got:";
+
+    i <- 0;
+    while i < 10 do
+        write " ";
+        write x[i];
+        i <- i + 1;
+    od
+    writeln "";
+
+    i <- 0;
+    while i < 10 do
+        write " ";
+        write y[i];
+        i <- i + 1;
+    od
+    writeln "";
+}
+
+procedure main ()
+    array_t arr;
+    array_t arr_copy;
+    integer i; 
+{
+    writeln "initialising arrays in external scope";
+
+    while i < 10 do
+        arr[i] <- i;
+        i <- i + 1; 
+    od
+    
+    arr_copy <- arr;
+
+    write "expecting:";
+    i <- 0;
+
+    while i < 10 do
+        write " ";
+        write arr[i];
+        i <- i + 1;
+    od
+
+    writeln "";
+    i <- 0;
+
+    while i < 10 do
+        write " ";
+        write arr_copy[i];
+        i <- i + 1;
+    od
+
+    writeln "";
+
+
+    call copy(arr, arr_copy);
+}   
+
