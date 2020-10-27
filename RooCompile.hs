@@ -35,42 +35,9 @@ data BlockState = BlockState
     , blockEpilogue :: [Text]
     , blockNextLambda :: Int }
 
--- | Resets the allocation of registers in the state.
-resetBlockRegs :: EitherState BlockState ()
-resetBlockRegs = do
-    current <- getEither
-    putEither (current { blockNextReg = 0 })
-
--- | Allocates a new register, and returns the register.
-useRegister :: EitherState BlockState Register
-useRegister = do
-    current <- getEither
-    let register = blockNextReg current
-    if register >= 1024 then
-        error "internal error: ran out of registers"
-    else do
-        putEither (current { blockNextReg = register + 1})
-        return $ Register register
-
--- | Pushes a register to the faux-stack formed by the final registers.
---   Used to save registers between procedure calls on the RHS of statements.
-pushRegister :: Register -> EitherState BlockState ()
-pushRegister register = do
-    current <- getEither
-    let head = blockStackReg current + 1
-    putEither (current { blockStackReg = head })
-
-    addInstrs $ ozMove (ozExtraRegisters head) register
-
--- | Pops a register from the faux-stack formed by the final registers.
---   Used to save registers between procedure calls on the RHS of statements.
-popRegister :: Register -> EitherState BlockState ()
-popRegister register = do
-    current <- getEither
-    let head = blockStackReg current
-    putEither (current { blockStackReg = head - 1 })
-
-    addInstrs $ ozMove register (ozExtraRegisters head)
+-- | Creates an empty block state from the given symbol table.
+initialBlockState :: RootTable -> BlockState
+initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
 
 -- | Adds the "this is a tail call" flag to the state.
 setTailCall :: EitherState BlockState ()
@@ -197,7 +164,7 @@ compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisE
 compileWithSymbols symbols errs procs = do
     -- Compile all the procedures in our program.
     let (errs', result) = execEither (mapM_ compileProc procs)
-                                     (BlockState symbols [] 0 0 0 False [] 0)
+                                     (initialBlockState symbols)
 
     let output = addHeader symbols (blockInstrs result)
 
@@ -848,7 +815,52 @@ storeSymbol locals lval register = do
             TypedValLvalue {} -> ozLoadAddress
             TypedRefLvalue {} -> ozLoad
 
+
+-----------------------------------
+-- Register Management
+-----------------------------------
+
+-- | Resets the allocation of registers in the state.
+resetBlockRegs :: EitherState BlockState ()
+resetBlockRegs = do
+    current <- getEither
+    putEither (current { blockNextReg = 0 })
+
+-- | Allocates a new register, and returns the register.
+useRegister :: EitherState BlockState Register
+useRegister = do
+    current <- getEither
+    let register = blockNextReg current
+    if register >= 1024 then
+        error "internal error: ran out of registers"
+    else do
+        putEither (current { blockNextReg = register + 1})
+        return $ Register register
+
+-- | Pushes a register to the faux-stack formed by the final registers.
+--   Used to save registers between procedure calls on the RHS of statements.
+pushRegister :: Register -> EitherState BlockState ()
+pushRegister register = do
+    current <- getEither
+    let head = blockStackReg current + 1
+    putEither (current { blockStackReg = head })
+
+    addInstrs $ ozMove (ozExtraRegisters head) register
+
+-- | Pops a register from the faux-stack formed by the final registers.
+--   Used to save registers between procedure calls on the RHS of statements.
+popRegister :: Register -> EitherState BlockState ()
+popRegister register = do
+    current <- getEither
+    let head = blockStackReg current
+    putEither (current { blockStackReg = head - 1 })
+
+    addInstrs $ ozMove register (ozExtraRegisters head)
+
+-----------------------------------
 -- Text processing for prettifying generated Oz code
+-----------------------------------
+
 addIndent :: Text -> Text
 addIndent "" = ""
 addIndent str

@@ -12,148 +12,18 @@ import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import RooAst
 
-newtype Register = Register Int
-    deriving Eq
+-----------------------------------
+-- EitherState Implementation 
+-----------------------------------
 
-instance Show Register where
-    show (Register r) = "r" <> show r
-
-newtype StackSlot = StackSlot Int
-    deriving (Ord, Eq, Num)
-
-stackSlotToInt :: StackSlot -> Int
-stackSlotToInt (StackSlot x) = x
-
-instance Show StackSlot where
-    show (StackSlot l) = show l
-
--- | Concatenates a list of pairs of lists.
-concatPair :: [([a], [b])] -> ([a], [b])
-concatPair = foldr combine ([], [])
-    where
-        combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
-
-mapPair :: (a -> b) -> (a, a) -> (b, b)
-mapPair f (x, y) = (f x, f y)
-
-tshow :: Show a => a -> Text
-tshow = T.pack . show
-
-tshowBool :: Bool -> Text
-tshowBool True = "true"
-tshowBool False = "false"
-
-backticks :: (Show a) => a -> Text
-backticks x = "`" <> tshow x <> "`"
-
-countWithNoun :: (Show a, Integral a) => a -> Text -> Text
-countWithNoun x noun
-    | x == 1    = "1 " <> noun
-    | otherwise = tshow x <> " " <> noun <> "s"
-
-enumerate :: [a] -> [(Int, a)]
-enumerate = zip [0..]
-
-uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
-uncurry3 f (x, y, z)= f x y z
-
-data Field = Field
-    { fieldPos :: SourcePos
-    , fieldOffset :: StackSlot
-    , fieldTy :: Type }
-    deriving (Ord, Eq)
-
-instance Show Field where
-    show = show . fieldTy
-
--- | A procedure symbol can be either a value or a reference.
-data ProcSymType = ValSymbol Type | RefSymbol Type
-    deriving (Ord, Eq)
-
-procSymType :: ProcSymType -> Type
-procSymType (ValSymbol ty) = ty
-procSymType (RefSymbol ty) = ty
-
-instance Show ProcSymType where
-    show (ValSymbol ty) = show ty <> " val"
-    show (RefSymbol ty) = show ty <> " ref"
-
--- | The different data types.
-data Type = TBool
-          | TString
-          | TInt
-          | TArray Text Int Type
-          | TRecord Text (Map Text Field)
-          | TFunc [ProcSymType] Type
-          | TVoid
-          | TNever
-    deriving (Ord, Eq)
-
-instance Show Type where
-    show TBool   = "boolean"
-    show TString = "string"
-    show TInt    = "integer"
-    show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
-    show (TRecord name _) = show name <> "{}"
-    show TVoid   = "void"
-    show TNever  = "!"
-    show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
-
-liftPrimitive :: PrimitiveType -> Type
-liftPrimitive RawBoolType = TBool
-liftPrimitive RawIntType = TInt
-
-sizeof :: Type -> Int
-sizeof TBool = 1
-sizeof TString = 1
-sizeof TInt = 1
-sizeof (TArray _ size ty) = size * sizeof ty
-sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
-sizeof TVoid = 0
-sizeof (TFunc _ _) = 1
-sizeof TNever = 0
-
-isPrimitive :: Type -> Bool
-isPrimitive TBool = True
-isPrimitive TInt = True
-isPrimitive _ = False
-
-isFunction :: Type -> Bool
-isFunction (TFunc _ _) = True
-isFunction _           = False
+-- | A state that also keeps track of errors, with helper functions.
+type EitherState s v = State ([AnalysisError], s) v
 
 -- | Represents an error during static analysis. Fields are: line, col, message
 data AnalysisError = AnalysisError Int Int Text
                    | AnalysisNote  Int Int Text
                    | AnalysisWarn  Int Int Text
     deriving Show
-
--- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
---   and wraps it in an Either.
-errorPos :: SourcePos -> Text -> [AnalysisError]
-errorPos pos err = pure $ AnalysisError (sourceLine pos) (sourceColumn pos) err
-
-warnPos :: SourcePos -> Text -> [AnalysisError]
-warnPos pos warning = pure $ AnalysisWarn (sourceLine pos) (sourceColumn pos) warning
-
--- | Creates an AnalysisError from a given SourcePos with a note giving more
---   detail at another SourcePos.
-errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
-errorWithNote errPos err notePos note =
-    [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
-    , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
-
--- | concats both left and right, but returns the one that exists 
-concatEither :: [Either [a] [b]] -> Either [a] [b]
-concatEither list
-        | null lefts' = Right rights'
-        | otherwise   = Left lefts'
-    where
-        lefts'  = concat $ lefts list
-        rights' = concat $ rights list
-
--- | A state that also keeps track of errors, with helper functions.
-type EitherState s v = State ([AnalysisError], s) v
 
 -- | Add the list of errors to the current EitherState.
 addErrors :: [AnalysisError] -> EitherState s ()
@@ -185,7 +55,7 @@ _ <?> Nothing = void getEither
 execEither :: EitherState s a -> s -> ([AnalysisError], s)
 execEither state initial = execState state ([], initial)
 
---  runEither: "run the state, return errors, final state, *and* an extra value"
+-- | `runState` for EitherSTate. "run the state, return errors, final state, *and* an extra value"
 runEither :: EitherState s a -> s -> Either [AnalysisError] (a, s)
 runEither state initial
     | null errs = Right (val, final)
@@ -193,6 +63,165 @@ runEither state initial
     where
         (val, (errs, final)) = runState state ([], initial)
 
+backticks :: (Show a) => a -> Text
+backticks x = "`" <> tshow x <> "`"
+
+countWithNoun :: (Show a, Integral a) => a -> Text -> Text
+countWithNoun x noun
+    | x == 1    = "1 " <> noun
+    | otherwise = tshow x <> " " <> noun <> "s"
+
+-----------------------------------
+-- Error Analysis Management 
+-----------------------------------
+
+-- | Creates an AnalysisError from a given SourcePos (provided by Parsec),
+--   and wraps it in an Either.
+errorPos :: SourcePos -> Text -> [AnalysisError]
+errorPos pos err = pure $ AnalysisError (sourceLine pos) (sourceColumn pos) err
+
+warnPos :: SourcePos -> Text -> [AnalysisError]
+warnPos pos warning = pure $ AnalysisWarn (sourceLine pos) (sourceColumn pos) warning
+
+-- | Creates an AnalysisError from a given SourcePos with a note giving more
+--   detail at another SourcePos.
+errorWithNote :: SourcePos -> Text -> SourcePos -> Text -> [AnalysisError]
+errorWithNote errPos err notePos note =
+    [ AnalysisError (sourceLine errPos)  (sourceColumn errPos)  err
+    , AnalysisNote  (sourceLine notePos) (sourceColumn notePos) note ]
+
+-- | Concatenates Left and Right lists. If there are any Left values, return Lefts; otherwise,
+--   return Rights.
+concatEither :: [Either [a] [b]] -> Either [a] [b]
+concatEither list
+        | null lefts' = Right rights'
+        | otherwise   = Left lefts'
+    where
+        lefts'  = concat $ lefts list
+        rights' = concat $ rights list
+
+-----------------------------------
+-- General Type Management 
+-----------------------------------
+
+-- | The different data types.
+data Type = TBool
+          | TString
+          | TInt
+          | TArray Text Int Type
+          | TRecord Text (Map Text Field)
+          | TFunc [ProcSymType] Type
+          | TVoid
+          | TNever
+    deriving (Ord, Eq)
+
+instance Show Type where
+    show TBool   = "boolean"
+    show TString = "string"
+    show TInt    = "integer"
+    show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
+    show (TRecord name _) = show name <> "{}"
+    show TVoid   = "void"
+    show TNever  = "!"
+    show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
+
+sizeof :: Type -> Int
+sizeof TBool = 1
+sizeof TString = 1
+sizeof TInt = 1
+sizeof (TArray _ size ty) = size * sizeof ty
+sizeof (TRecord _ map) = foldr ((+) . sizeof . fieldTy) 0 map
+sizeof TVoid = 0
+sizeof (TFunc _ _) = 1
+sizeof TNever = 0
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
+-----------------------------------
+-- Record Field Type Management 
+-----------------------------------
+
+data Field = Field
+    { fieldPos :: SourcePos
+    , fieldOffset :: StackSlot
+    , fieldTy :: Type }
+    deriving (Ord, Eq)
+
+instance Show Field where
+    show = show . fieldTy
+
+-----------------------------------
+-- Procedure Sym Type Management 
+-----------------------------------
+
+-- | A procedure symbol can be either a value or a reference.
+data ProcSymType = ValSymbol Type | RefSymbol Type
+    deriving (Ord, Eq)
+
+procSymType :: ProcSymType -> Type
+procSymType (ValSymbol ty) = ty
+procSymType (RefSymbol ty) = ty
+
+instance Show ProcSymType where
+    show (ValSymbol ty) = show ty <> " val"
+    show (RefSymbol ty) = show ty <> " ref"
+
+-----------------------------------
+-- Wrapper Types 
+-----------------------------------
+
+newtype Register = Register Int
+    deriving Eq
+
+instance Show Register where
+    show (Register r) = "r" <> show r
+
+newtype StackSlot = StackSlot Int
+    deriving (Ord, Eq, Num)
+
+instance Show StackSlot where
+    show (StackSlot l) = show l
+
+stackSlotToInt :: StackSlot -> Int
+stackSlotToInt (StackSlot x) = x
+
+-----------------------------------
+-- General Helper Functions  
+-----------------------------------
+
 unwrapOr :: Maybe v -> Either e v -> Either e v
 unwrapOr (Just x) _  = Right x
 unwrapOr Nothing err = err
+
+-- | Concatenates a list of pairs of lists.
+concatPair :: [([a], [b])] -> ([a], [b])
+concatPair = foldr combine ([], [])
+    where
+        combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
+
+mapPair :: (a -> b) -> (a, a) -> (b, b)
+mapPair f (x, y) = (f x, f y)
+
+tshowBool :: Bool -> Text
+tshowBool True = "true"
+tshowBool False = "false"
+
+enumerate :: [a] -> [(Int, a)]
+enumerate = zip [0..]
+
+uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (x, y, z)= f x y z
+
+liftPrimitive :: PrimitiveType -> Type
+liftPrimitive RawBoolType = TBool
+liftPrimitive RawIntType = TInt
+
+isPrimitive :: Type -> Bool
+isPrimitive TBool = True
+isPrimitive TInt = True
+isPrimitive _ = False
+
+isFunction :: Type -> Bool
+isFunction (TFunc _ _) = True
+isFunction _           = False

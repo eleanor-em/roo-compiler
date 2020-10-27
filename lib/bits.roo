@@ -62,19 +62,6 @@ procedure bit_xor(integer val x, integer val y) -> integer
     return result;
 }
 
-procedure bit_xor(integer val x, integer val y) -> integer
-    integer result;
-    integer i;
-{
-    while i < 32 do
-        if nbit(x, i) = 1 or nbit(y, i) = 1 then
-            result <- result + two_to(i);
-        fi
-        i <- i + 1;
-    od
-    return result;
-}
-
 procedure bit_shl(integer val x, integer val n) -> integer
 {
     return x * two_to(n);
