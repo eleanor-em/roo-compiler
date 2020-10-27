@@ -5,6 +5,9 @@ The Fighting Mongooses: Eleanor McMurtry and Jenny Yan.
 Our compiler is optimistic: if it encounters a semantic error, it replaces any types with ⊥ and
 continues to analyse the rest of the code in order to report as many errors as possible.
 
+For increased expressiveness, we allow assignments between records and arrays even when one is of
+value mode.
+
 ## Compiler warnings
 Our compiler also extends semantic analysis to warn programmers of possible unintended behaviour in
 their code. The warning categories are outlined below. Warnings do not cause compilation to fail.
