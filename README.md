@@ -310,7 +310,7 @@ procedure map (procedure (integer val x) -> integer unary_op, array_t in, array_
 ```
 Again, Oz not supporting branching-to-addresses makes this somewhat awkward. We implement this using
 a preprocessing step: before generating symbols, the code is scanned for any lambda declarations,
-which are lifted to proper procedures. The above code thus translates to like:
+which are lifted to proper procedures. The above code thus translates to:
 ```
 array[10] integer array_t;
 
