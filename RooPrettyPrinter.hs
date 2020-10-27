@@ -90,10 +90,8 @@ prettyType (LocatedTypeName _ ty) = prettyTypeInner ty
 prettyTypeInner :: TypeName -> Text
 prettyTypeInner (PrimitiveTypeName primitiveType) = prettyPrimitiveType primitiveType
 prettyTypeInner (AliasTypeName ident) = fromIdent ident
-prettyTypeInner (FunctionTypeName params VoidTypeName)
-    = "procedure(" <> foldMap prettyParameter params <> ")"
 prettyTypeInner (FunctionTypeName params retType)
-    = "procedure(" <> foldMap prettyParameter params <> ") -> " <> prettyTypeInner retType
+    = "procedure (" <> intercalate ", " (map prettyParameter params) <> ") -> " <> prettyTypeInner retType
 prettyTypeInner VoidTypeName = "void"
 
 -- | Replaces a FieldDecl node with a string 

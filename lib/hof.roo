@@ -1,0 +1,43 @@
+array[10] integer array_t;
+
+procedure naturals (array_t arr)
+    integer i;
+{
+    while i < 10 do
+        arr[i] <- i;
+        i <- i + 1;
+    od
+}
+
+procedure for_each (procedure (integer val x) consumer, array_t arr)
+    integer i;
+{
+    while i < 10 do
+        call consumer(arr[i]);
+        i <- i + 1;
+    od
+}
+
+procedure map (procedure (integer val x) -> integer unary_op, array_t in, array_t out)
+    integer i;
+    integer x;
+{
+    while i < 10 do
+        out[i] <- unary_op(in[i]);
+        i <- i + 1;
+    od
+}
+
+procedure filter (procedure (integer val x) -> boolean predicate, array_t in, array_t out)
+    integer i, next;
+{
+    call map(lambda (integer val x) -> integer { return 0; }, out, out);
+
+    while i < 10 do
+        if predicate(in[i]) then
+            out[next] <- in[i];
+            next <- next + 1;
+        fi
+        i <- i + 1;
+    od
+}

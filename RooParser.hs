@@ -85,6 +85,21 @@ reserved, reservedOp :: String -> Parser ()
 reserved   = lexeme . Q.reserved scanner
 reservedOp = Q.reservedOp scanner
 
+pKeyword :: String -> Parser ()
+pKeyword []  = pure ()
+
+pKeyword [c] = lexeme (char c)
+            $> ()
+
+pKeyword str = lexeme (char begin)
+            *> mapM_ char middle
+            *> lexeme (char end)
+            $> ()
+    where
+        begin  = head          str
+        middle = (init . tail) str
+        end    = last          str
+
 -----------------------------------
 -- Main Program Parsing
 -----------------------------------
@@ -170,11 +185,17 @@ pPrimitiveType =
     <|>
         reserved "integer" $> RawIntType
 
+pReturnType :: Parser TypeName
+pReturnType =
+        PrimitiveTypeName <$> pPrimitiveType
+    <|>
+        pKeyword "void" $> VoidTypeName
+
 pFunctionType :: Parser TypeName
 pFunctionType = do
     reserved "procedure"
     params <- parens (pFormalParam `sepBy` comma)
-    retType <- option VoidTypeName (PrimitiveTypeName <$> (reservedOp "->" *> pPrimitiveType))
+    retType <- option VoidTypeName (reserved "->" *> pReturnType)
     return $ FunctionTypeName params retType
 
 -- | Parses a positive integer and returns an Int node if accepted 
@@ -193,8 +214,7 @@ pPositiveInt = do
 -- | Parses any statement and returns a Statement node if accepted 
 pStatement :: Parser Statement
 pStatement = choice
-     [ pAtomicStatement, try pIfElseStatement -- `try` in case it's just a regular if statement
-     , pIfStatement, pWhileStatement ]
+     [ pAtomicStatement, pIfStatement, pWhileStatement ]
     <?>
         "statement"
 
@@ -291,19 +311,8 @@ pReadStatement :: Parser Statement
 pReadStatement =
     SRead <$> (reserved "read" *> pLvalue)
 
--- | Hacky way to parse "return" without making it a reserved keyword.
-pReturnKeyword :: Parser ()
-pReturnKeyword = do
-    lexeme $ char 'r'
-    char 'e'
-    char 't'
-    char 'u'
-    char 'r'
-    lexeme $ char 'n'
-    return ()
-
 pReturnStatement :: Parser Statement
-pReturnStatement = SReturn <$> (pReturnKeyword *> pExpression)
+pReturnStatement = SReturn <$> (pKeyword "return" *> pExpression)
 
 -- | Parses an if statement and returns a Statement node if accepted 
 pIfStatement :: Parser Statement 
@@ -312,20 +321,16 @@ pIfStatement = do
     condition <- pExpression
     reserved "then"
     body <- many1 pStatement <?> "statement, \"else\" or \"fi\""
-    reserved "fi"
-    return $ SIf condition body
 
--- | Parses an ifelse statement and returns a Statement node if accepted 
-pIfElseStatement :: Parser Statement 
-pIfElseStatement = do
-    reserved "if"
-    condition <- pExpression
-    reserved "then"
-    body <- many1 pStatement <?> "statement, \"else\" or \"fi\""
-    reserved "else"
-    elseBody <- many1 pStatement
-    reserved "fi"
-    return $ SIfElse condition body elseBody
+    next <- optionMaybe (reserved "else")
+    case next of
+        Just _ -> do
+            elseBody <- many1 pStatement
+            reserved "fi"
+            return $ SIfElse condition body elseBody
+        _ -> do
+            reserved "fi"
+            return $ SIf condition body
 
 -- | Parses a while statement and returns a Statement node if accepted 
 pWhileStatement :: Parser Statement 
@@ -351,7 +356,7 @@ pExpression =
 -- | Parses a factor and returns and Expression node if accepted 
 pFactor :: Parser LocatedExpr
 pFactor =
-        choice [ try pLambda, parens pExpression, pStringLiteral, pIntLiteral
+        choice [ pLambda, parens pExpression, pStringLiteral, pIntLiteral
                , pBoolLiteral, try pFuncCall, pNegatedExpr, pLvalueExpr ]
     <?>
         "expression"
@@ -427,24 +432,12 @@ pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
 pFuncCall :: Parser LocatedExpr
 pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` comma))
 
--- | Hacky way to parse "lambda" without making it a reserved keyword.
-pLambdaKeyword :: Parser ()
-pLambdaKeyword = do
-    lexeme $ char 'l'
-    char 'a'
-    char 'm'
-    char 'b'
-    char 'd'
-    lexeme $ char 'a'
-    return ()
-
 pLambda :: Parser LocatedExpr
 pLambda = do
     pos <- sourcePos
-    pLambdaKeyword
+    pKeyword "lambda"
     params <- parens (pFormalParam `sepBy` comma)
-    reservedOp "->"
-    retType <- option VoidTypeName (PrimitiveTypeName <$> pPrimitiveType)
+    retType <- LocatedTypeName pos <$> option VoidTypeName (reservedOp "->" *> pReturnType)
     varDecls <- many pVarDecl
     statements <- braces (many pStatement);
     return $ LocatedExpr pos $ ELambda params retType varDecls statements

@@ -1,0 +1,86 @@
+procedure mod (integer val x, integer val n) -> integer
+    integer result;
+{
+    if n = 1 then
+        return x;
+    fi
+
+    result <- x - x / n * n;
+
+    if result < 0 then
+        return result + n;
+    else
+        return result;
+    fi
+}
+
+procedure even (integer val x) -> boolean
+{
+    return mod(x, 2) = 0;
+}
+
+procedure modpow (integer val base, integer val exponent, integer val modulus) -> integer
+{
+    if exponent = 0 then
+        return 1;
+    fi
+
+    if exponent = 1 then
+        return base;
+    fi
+    
+    if even(exponent) then
+        return modpow(mod(base * base, modulus), exponent / 2, modulus);
+    else
+        return mod(base * modpow(base, exponent - 1, modulus), modulus);
+    fi
+}
+
+procedure pow(integer val base, integer val exponent) -> integer
+{
+    if exponent = 0 then
+        return 1;
+    fi
+
+    if exponent = 1 then
+        return base;
+    fi
+
+    if even(exponent) then
+        return pow(base * base, exponent / 2);
+    else
+        return base * pow(base, exponent - 1);
+    fi
+}
+
+procedure euclid_gcd (integer val a, integer val n, integer gcd, integer inverse)
+{
+    call euclid_rec(a, n, 1, 0, 0, 1, gcd, inverse);
+    inverse <- mod(inverse, n);
+}
+
+procedure euclid_rec (integer val r', integer val r, integer val s', integer val s,
+                      integer val t', integer val t, integer gcd, integer inverse)
+    integer temp;
+    integer quotient;
+    procedure (integer val q, integer prev, integer curr) -> void euclid_step;
+{
+    if r = 0 then
+        gcd <- r;
+        inverse <- s';
+    else
+        euclid_step <- lambda (integer val quotient, integer prev, integer curr)
+            integer temp;
+        {
+            temp <- prev;
+            prev <- curr;
+            curr <- temp - quotient * curr;
+        };
+
+        quotient <- r' / r;
+        call euclid_step(quotient, r', r);
+        call euclid_step(quotient, s', s);
+        call euclid_step(quotient, t', t);
+        call euclid_rec(r', r, s', s, t', t, gcd, inverse);
+    fi
+}

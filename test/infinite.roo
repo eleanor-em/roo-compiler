@@ -1,6 +1,12 @@
+array[10] integer array_t;
+
 procedure main ()
     integer i;
+    array_t arr;
 {
+    while i < 10 do
+        arr[i] <- i;
+    od
     while true do
         writeln "";
     od

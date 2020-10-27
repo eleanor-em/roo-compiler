@@ -11,7 +11,6 @@ import Data.Map.Strict (Map)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 
 import RooAst
-import Data.String (IsString)
 
 newtype Register = Register Int
     deriving Eq

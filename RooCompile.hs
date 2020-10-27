@@ -15,7 +15,6 @@ import Oz
 import RooPrettyPrinter (prettyStatement, prettyExpr)
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
-import Text.Parsec.Pos (initialPos)
 
 -- | Global state for the compiler. Stores:
 --   * the root-level symbol table
@@ -35,10 +34,6 @@ data BlockState = BlockState
     , isTailCall :: Bool
     , blockEpilogue :: [Text]
     , blockNextLambda :: Int }
-
--- | Creates an empty block state from the given symbol table.
-initialBlockState :: RootTable -> BlockState
-initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
 
 -- | Resets the allocation of registers in the state.
 resetBlockRegs :: EitherState BlockState ()
@@ -129,9 +124,11 @@ generateVtable table = mconcat
                     , [ addIndent "return" ] ]
 
 -- | Searches a procedure for any lambda functions, turning them into procedure definitions.
-compileLambdas :: Procedure -> [Procedure]
+compileLambdas :: Procedure -> State Int [Procedure]
 compileLambdas (Procedure _ _ _ _ statements)
-    = concat $ evalState (mapM compileLambdasInner statements) 0
+    = do
+        procs <- mapM compileLambdasInner statements
+        return $ concat procs
 
 -- | Search the statement for any lambda functions, and turn them into procedure definitions.
 --   The state encodes the current used index.
@@ -158,7 +155,7 @@ compileLambdasInner statement
             inners <- concat <$> mapM compileLambdasInner body
             return $ exprs <> inners
 
-        SReturn expr  -> compileExprLambdas expr
+        SReturn expr -> compileExprLambdas expr
 
         _ -> pure []
     where
@@ -172,10 +169,14 @@ compileLambdasInner statement
         compileExprLambdas (LocatedExpr _ (EFunc _ args))
             = concat <$> mapM compileExprLambdas args
         compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
+            let (LocatedTypeName _ retTypeInner) = retType
+
             current <- get
             put (current + 1)
             let header = ProcHeader (Ident pos (lambdaLabel current)) params
-            return $ pure $ Procedure pos header retType varDecls body
+
+            return $ pure $ Procedure pos header retTypeInner varDecls body
+
 
         compileExprLambdas _ = pure []
 
@@ -183,14 +184,21 @@ compileLambdasInner statement
 compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
 compileSymbols initial (Program recs arrs procs) = (symbols, errs, procs')
     where
-        procs'          = procs <> concatMap compileLambdas procs
+        -- Count the number of lambda functions in the initial table
+        lambdaCount = Map.size $ Map.filterWithKey (\key _ -> "__lambda" `T.isInfixOf` key)
+                                                   (rootProcs initial)
+
+        procs' = procs <> concat (evalState (mapM compileLambdas procs) lambdaCount)
+
         (errs, symbols) = getAllSymbols (Program recs arrs procs') initial
 
 -- | Compile the program with the given symbol table, previous errors, and procedure list.
 compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisError], [Text])
 compileWithSymbols symbols errs procs = do
     -- Compile all the procedures in our program.
-    let (errs', result) = execEither (mapM_ compileProc procs) (initialBlockState symbols)
+    let (errs', result) = execEither (mapM_ compileProc procs)
+                                     (BlockState symbols [] 0 0 0 False [] 0)
+
     let output = addHeader symbols (blockInstrs result)
 
     let allErrs = errs <> errs'
@@ -233,8 +241,8 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
         Just (_, locals) -> do
             -- Check that non-void procedures always return a value
             unless (retType == VoidTypeName || any returnsValue statements)
-                   (addErrors $ warnPos pos
-                   "control may reach the end of the procedure without returning a value")
+                (addErrors $ warnPos pos
+                "control may reach the end of the procedure without returning a value")
 
             let stackSize = localStackSize locals
             let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
@@ -251,8 +259,8 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
 
             let localPrologue = if stackSize - paramCount > 0 then
                     makeComment "init locals" <> ozIntConst (Register 0) 0
-                                              <> concatMap ((`ozStore` Register 0) . StackSlot)
-                                                           [paramCount..stackSize - 1]
+                                            <> concatMap ((`ozStore` Register 0) . StackSlot)
+                                                        [paramCount..stackSize - 1]
                 else
                     []
 
@@ -645,12 +653,15 @@ compileExpr locals (EFunc func args) = do
         Just _   -> return $ Just result
         _        -> return Nothing
 
-compileExpr locals ELambda {} = do
+compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
+    -- Allocate a lambda
     current <- getEither
     let nextLambda = blockNextLambda current
     putEither ( current { blockNextLambda = nextLambda + 1 })
+
     addInstrs $ makeComment ("call lambda " <> lambdaLabel nextLambda)
-    compileExpr locals (ELvalue (LId (Ident (initialPos "") (lambdaLabel nextLambda))))
+
+    compileExpr locals (ELvalue (LId (Ident pos (lambdaLabel nextLambda))))
 
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
 loadLvalue locals lvalue = do

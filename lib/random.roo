@@ -1,0 +1,20 @@
+# Linear congruential generator
+
+procedure random (integer seed) -> integer
+    integer a;
+    integer b;
+    integer m;
+{
+    a <- 23311;
+    b <- 325737;
+    m <- 91331;
+    
+    seed <- a * seed + b;
+    seed <- seed - seed / m * m;
+
+    if seed < 0 then
+        seed <- seed + m;
+    fi
+
+    return seed;
+}
