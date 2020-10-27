@@ -6,12 +6,18 @@ Description : Grammar of our Roo AST
 
 Roo AST written by $team for Programming Language Implementation 
 Assignment 1b. This file specifies node representations of the various components that make
-up the Roo Language.  
+up the Roo Language. Where appropriate, it specifies the origin of nodes in the source
+file according to row and column. It also includes appropriate helper functions for
+extracting information from nodes. 
 -}
 
 module RooAst where
 
 import Data.Text (Text)
+
+-----------------------------------
+-- AST Nodes 
+-----------------------------------
 
 import Text.Parsec (SourcePos, sourceLine, sourceColumn)
 import Text.Parsec.Pos (initialPos)
@@ -76,18 +82,17 @@ data VarDecl = VarDecl LocatedTypeName [Ident]
 data Parameter = TypeParam LocatedTypeName Ident | ValParam LocatedTypeName Ident
     deriving (Show, Eq)
 
+-- | A Located Type Name node tracks both the Type Name node
+-- and its source position in the source code.
+data LocatedTypeName = LocatedTypeName SourcePos TypeName
+    deriving (Show, Eq)
+
 -- | A Type Name node can either by a Primitive Type or a type Alias 
 data TypeName = PrimitiveTypeName PrimitiveType
               | AliasTypeName Ident
               | FunctionTypeName [Parameter] TypeName
               | VoidTypeName
     deriving (Show, Eq)
-
-data LocatedTypeName = LocatedTypeName SourcePos TypeName
-    deriving (Show, Eq)
-
-getTypePos :: LocatedTypeName -> SourcePos
-getTypePos (LocatedTypeName pos _) = pos
 
 -- | A Statement node can be one of the following forms:
 --
@@ -124,9 +129,6 @@ data Expression
     | EFunc Ident [LocatedExpr]
     | ELambda [Parameter] LocatedTypeName [VarDecl] [Statement]
     deriving (Show, Eq)
-
-liftExpr :: Expression -> LocatedExpr
-liftExpr = LocatedExpr (initialPos "")
 
 -- | An Expression with a source location.
 data LocatedExpr = LocatedExpr { locate :: SourcePos, fromLocated :: Expression }
@@ -170,6 +172,20 @@ data Lvalue
     | LArrayMember Ident LocatedExpr Ident
     deriving (Show, Eq)
 
+-- | Identifier is a non empty sequence of chars (or Text)
+data Ident = Ident SourcePos Text
+    deriving Eq
+
+-----------------------------------
+-- AST Helper Functions 
+-----------------------------------
+
+getTypePos :: LocatedTypeName -> SourcePos
+getTypePos (LocatedTypeName pos _) = pos
+
+liftExpr :: Expression -> LocatedExpr
+liftExpr = LocatedExpr (initialPos "")
+
 locateLvalue :: Lvalue -> SourcePos
 locateLvalue (LId (Ident pos _)) = pos
 locateLvalue (LMember (Ident pos _) _) = pos
@@ -183,10 +199,6 @@ nameLvalue (LMember (Ident _ record) (Ident _ field)) = record <> "." <> field
 -- Don't waste time dynamically checking the array index
 nameLvalue (LArray (Ident _ array) _) = array <> "[]"
 nameLvalue (LArrayMember (Ident _ array) _ (Ident _ field)) = array <> "[]." <> field
-
--- | Identifier is a non empty sequence of chars (or Text)
-data Ident = Ident SourcePos Text
-    deriving Eq
 
 instance Show Ident where
     show (Ident pos ident) = concat

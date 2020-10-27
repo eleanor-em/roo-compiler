@@ -63,14 +63,6 @@ runEither state initial
     where
         (val, (errs, final)) = runState state ([], initial)
 
-backticks :: (Show a) => a -> Text
-backticks x = "`" <> tshow x <> "`"
-
-countWithNoun :: (Show a, Integral a) => a -> Text -> Text
-countWithNoun x noun
-    | x == 1    = "1 " <> noun
-    | otherwise = tshow x <> " " <> noun <> "s"
-
 -----------------------------------
 -- Error Analysis Management 
 -----------------------------------
@@ -101,10 +93,10 @@ concatEither list
         rights' = concat $ rights list
 
 -----------------------------------
--- General Type Management 
+-- Type Declarations 
 -----------------------------------
 
--- | The different data types.
+-- | Wrapping all the potential data types under a `Type` 
 data Type = TBool
           | TString
           | TInt
@@ -115,6 +107,34 @@ data Type = TBool
           | TNever
     deriving (Ord, Eq)
 
+-- | A procedure symbol can be either a value or a reference.
+data ProcSymType = ValSymbol Type | RefSymbol Type
+    deriving (Ord, Eq)
+
+-- | A Record Field node consists of: 
+-- 
+--     1. its source position in the source file
+--     2. the stack slot that it's stored in
+--     3. the type of the field 
+data Field = Field
+    { fieldPos :: SourcePos
+    , fieldOffset :: StackSlot
+    , fieldTy :: Type }
+    deriving (Ord, Eq)
+
+-- | A Register is a wrapper type to indicate registers in Oz
+newtype Register = Register Int
+    deriving Eq
+
+-- | A Stackslot is a wrapper type to indicate specific stackslots in oz
+newtype StackSlot = StackSlot Int
+    deriving (Ord, Eq, Num)
+
+-----------------------------------
+-- Type to Text Conversions 
+-----------------------------------
+
+-- | Indicating how to `Show` our types when read
 instance Show Type where
     show TBool   = "boolean"
     show TString = "string"
@@ -125,6 +145,46 @@ instance Show Type where
     show TNever  = "!"
     show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
 
+-- | Indicating how to `Show` objects that are pass by ref or local 
+instance Show ProcSymType where
+    show (ValSymbol ty) = show ty <> " val"
+    show (RefSymbol ty) = show ty <> " ref"
+
+-- | Indicating how to `Show` Field objects 
+instance Show Field where
+    show = show . fieldTy
+
+-- | Indicating how to `Show` Registers 
+instance Show Register where
+    show (Register r) = "r" <> show r
+
+-- | Indicating how to `Show` Stackslots
+instance Show StackSlot where
+    show (StackSlot l) = show l
+
+-- | Combining type -> String & String -> Text 
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
+-- | Visualising `backticks`
+backticks :: (Show a) => a -> Text
+backticks x = "`" <> tshow x <> "`"
+
+-- | Tracking noun occurrences 
+countWithNoun :: (Show a, Integral a) => a -> Text -> Text
+countWithNoun x noun
+    | x == 1    = "1 " <> noun
+    | otherwise = tshow x <> " " <> noun <> "s"
+
+-- | Visualising booleans 
+tshowBool :: Bool -> Text
+tshowBool True = "true"
+tshowBool False = "false"
+
+-----------------------------------
+-- General `Type` Helper Functions 
+-----------------------------------
+-- | Calculating the size of different types
 sizeof :: Type -> Int
 sizeof TBool = 1
 sizeof TString = 1
@@ -135,61 +195,36 @@ sizeof TVoid = 0
 sizeof (TFunc _ _) = 1
 sizeof TNever = 0
 
-tshow :: Show a => a -> Text
-tshow = T.pack . show
+-- | Unwrapping a StackSlot into an Int 
+stackSlotToInt :: StackSlot -> Int
+stackSlotToInt (StackSlot x) = x
 
------------------------------------
--- Record Field Type Management 
------------------------------------
+-- | Lifting a raw primitive into a standard type 
+liftPrimitive :: PrimitiveType -> Type
+liftPrimitive RawBoolType = TBool
+liftPrimitive RawIntType = TInt
 
-data Field = Field
-    { fieldPos :: SourcePos
-    , fieldOffset :: StackSlot
-    , fieldTy :: Type }
-    deriving (Ord, Eq)
+-- | Helper function for determining if something is primitive
+isPrimitive :: Type -> Bool
+isPrimitive TBool = True
+isPrimitive TInt = True
+isPrimitive _ = False
 
-instance Show Field where
-    show = show . fieldTy
+-- | Helper function for determining if something is a function
+isFunction :: Type -> Bool
+isFunction (TFunc _ _) = True
+isFunction _           = False
 
------------------------------------
--- Procedure Sym Type Management 
------------------------------------
-
--- | A procedure symbol can be either a value or a reference.
-data ProcSymType = ValSymbol Type | RefSymbol Type
-    deriving (Ord, Eq)
-
+-- | Unwrapping a ProcSymType into its underlying type 
 procSymType :: ProcSymType -> Type
 procSymType (ValSymbol ty) = ty
 procSymType (RefSymbol ty) = ty
-
-instance Show ProcSymType where
-    show (ValSymbol ty) = show ty <> " val"
-    show (RefSymbol ty) = show ty <> " ref"
-
------------------------------------
--- Wrapper Types 
------------------------------------
-
-newtype Register = Register Int
-    deriving Eq
-
-instance Show Register where
-    show (Register r) = "r" <> show r
-
-newtype StackSlot = StackSlot Int
-    deriving (Ord, Eq, Num)
-
-instance Show StackSlot where
-    show (StackSlot l) = show l
-
-stackSlotToInt :: StackSlot -> Int
-stackSlotToInt (StackSlot x) = x
 
 -----------------------------------
 -- General Helper Functions  
 -----------------------------------
 
+-- | Unrapping a Maybe object into an Either object 
 unwrapOr :: Maybe v -> Either e v -> Either e v
 unwrapOr (Just x) _  = Right x
 unwrapOr Nothing err = err
@@ -200,28 +235,13 @@ concatPair = foldr combine ([], [])
     where
         combine = \(nextA, nextB) (accA, accB) -> (nextA <> accA, nextB <> accB)
 
+-- | Mapping a function across pairs of obejcts 
 mapPair :: (a -> b) -> (a, a) -> (b, b)
 mapPair f (x, y) = (f x, f y)
 
-tshowBool :: Bool -> Text
-tshowBool True = "true"
-tshowBool False = "false"
-
+-- | Generating a list of pairs, by attaching a number to each object
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
 
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (x, y, z)= f x y z
-
-liftPrimitive :: PrimitiveType -> Type
-liftPrimitive RawBoolType = TBool
-liftPrimitive RawIntType = TInt
-
-isPrimitive :: Type -> Bool
-isPrimitive TBool = True
-isPrimitive TInt = True
-isPrimitive _ = False
-
-isFunction :: Type -> Bool
-isFunction (TFunc _ _) = True
-isFunction _           = False

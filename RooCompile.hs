@@ -16,6 +16,7 @@ import RooPrettyPrinter (prettyStatement, prettyExpr)
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
 
+
 -- | Global state for the compiler. Stores:
 --   * the root-level symbol table
 --   * the instructions generated so far
@@ -62,90 +63,12 @@ addInstrsRaw instrs = do
     let prevInstrs = blockInstrs current
     putEither (current { blockInstrs = prevInstrs <> instrs})
 
--- | Generates the vtable instructions for the given symbol table. This works by assigning an index
---   to every procedure, and performing a linear scan on a dedicated register to search for the
---   appropriate procedure.
-generateVtable :: RootTable -> [Text]
-generateVtable table = mconcat
-    [ [ vTableLabel <> ":" ]
-    , mconcat branches
-    , map addIndent (ozBranch "__vtable_end")
-    , mconcat labels
-    , [ "__vtable_end:" ]
-    , map addIndent $ mconcat
-        [ ozWriteString "invalid virtual pointer: "
-        , ozReadVPtr (Register 0)
-        , ozWriteInt (Register 0)
-        , ozWriteString "\\n(exiting)"
-        , [ "halt" ] ] ]
-    where
-        (branches, labels) = unzip $ map extractVtableData (Map.toAscList (rootVtable table))
-        extractVtableData (index, (_, locals)) = (branch, target)
-            where
-                procName = localProcName locals
-                label  = "__vptr_" <> procName
-                branch = map addIndent (ozCmpBranchVPtr index label)
-                target = mconcat
-                    [ [ label <> ":" ]
-                    , map addIndent (ozCall (makeProcLabel procName))
-                    , [ addIndent "return" ] ]
 
--- | Searches a procedure for any lambda functions, turning them into procedure definitions.
-compileLambdas :: Procedure -> State Int [Procedure]
-compileLambdas (Procedure _ _ _ _ statements)
-    = do
-        procs <- mapM compileLambdasInner statements
-        return $ concat procs
+-- | Creates a comment by pretty-printing the statement.
+--   Doesn't work nicely for multi-line statements.
+commentStatement :: Statement -> EitherState BlockState ()
+commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
 
--- | Search the statement for any lambda functions, and turn them into procedure definitions.
---   The state encodes the current used index.
-compileLambdasInner :: Statement -> State Int [Procedure]
-compileLambdasInner statement
-    = case statement of
-        SAssign _ rhs -> compileExprLambdas rhs
-
-        SCall _ args  -> concat <$> mapM compileExprLambdas args
-
-        SIf expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
-
-        SIfElse expr bodyIf bodyElse -> do
-            exprs <- compileExprLambdas expr
-            innersIf <- concat <$> mapM compileLambdasInner bodyIf
-            innersElse <- concat <$> mapM compileLambdasInner bodyElse
-            return $ exprs <> innersIf <> innersElse
-
-        SWhile expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
-
-        SReturn expr -> compileExprLambdas expr
-
-        _ -> pure []
-    where
-        compileExprLambdas :: LocatedExpr -> State Int [Procedure]
-        compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
-            ls <- compileExprLambdas lhs
-            rs <- compileExprLambdas rhs
-            return $ ls <> rs
-        compileExprLambdas (LocatedExpr _ (EUnOp _ inner))
-            = compileExprLambdas inner
-        compileExprLambdas (LocatedExpr _ (EFunc _ args))
-            = concat <$> mapM compileExprLambdas args
-        compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
-            let (LocatedTypeName _ retTypeInner) = retType
-
-            current <- get
-            put (current + 1)
-            let header = ProcHeader (Ident pos (lambdaLabel current)) params
-
-            return $ pure $ Procedure pos header retTypeInner varDecls body
-
-
-        compileExprLambdas _ = pure []
 
 -- | Compiles the symbols in a given program, with an initial symbol table provided.
 compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
@@ -246,95 +169,6 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
             addInstrs (makeComment "epilogue" <> epilogue)
 
         Nothing  -> error "internal error: missed a procedure somehow"
-
--- | Creates a comment by pretty-printing the statement.
---   Doesn't work nicely for multi-line statements.
-commentStatement :: Statement -> EitherState BlockState ()
-commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
-
--- | Compile a `write` statement with a given expression, updating the state with the instructions
---   and any errors.
-compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
---   Special case to handle string literals.
-compileWrite _ (LocatedExpr _ (EConst (LitString str)))
-    = addInstrs (ozWriteString str)
-
-compileWrite locals expr = do    
-    current <- getEither
-    let symbols = blockSyms current
-
-    addErrorsOr (analyseExpression symbols locals expr) $ \(TypedExpr ty expr) -> do
-        register <- compileExpr locals (simplifyExpression expr)
-
-        let op TInt  = addInstrs . ozWriteInt
-            op TBool = addInstrs . ozWriteBool
-            op _     = error $ "internal error: attempted to write invalid type "
-                            <> T.unpack (backticks ty)
-            in op ty <?> register
-
--- | Compile a procedure call given the procedure's name and its actual arguments.
---   Updates the state with the instructions and any errors.
-compileCall :: LocalTable -> Ident -> [LocatedExpr] -> EitherState BlockState (Maybe Register)
-compileCall locals ident args = do
-    current <- getEither
-    let symbols = blockSyms current
-    let result = do
-        (typedArgs, params, retType) <- typecheckCall symbols locals ident args
-        -- Compile arguments
-        let typedArgs' = zip typedArgs params
-        let currentReg = blockNextReg current
-        let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
-        (registers, final) <- runEither (mapM compileArg typedArgs') next
-
-        -- handle the case where it's a HOF
-        case lookupProc (blockSyms current) (fromIdent ident) of
-            Just _ ->
-                if isTailCall current then do
-                    let stores = concatMap (uncurry ozStore)
-                                           (zip (map StackSlot [0..]) (catMaybes registers))
-
-                    let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
-                    let nextLambda = blockNextLambda final
-                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
-
-                else do
-                    let moves = concatMap (uncurry ozMove)
-                                          (zip (map Register [0..]) (catMaybes registers))
-
-                    let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
-                    let nextLambda = blockNextLambda final
-                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
-            
-            Nothing -> do
-                (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
-
-                case ptr of 
-                    Just ptr -> do
-                        let moves = concatMap (uncurry ozMove)
-                                              (zip (map Register [0..]) (catMaybes registers))
-                        let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
-                        let nextLambda = blockNextLambda final'
-                        return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
-                    Nothing -> error "internal error: did not catch all HOF call cases :("
-
-    case result of
-        Left errs    -> do
-            addErrors errs
-            return Nothing
-
-        Right (instrs, retType, nextLambda) -> do
-            addInstrsRaw instrs
-            current' <- getEither
-            putEither (current' { blockNextLambda = nextLambda })
-            return $ case retType of
-                TVoid -> Nothing
-                _     -> Just ozReturnRegister
-    where
-        -- | Compile the argument, loading the address for refsand the value for vals
-        compileArg (TypedExpr _ (ELvalue lvalue), RefSymbol _)
-            = loadAddress locals lvalue
-        compileArg (TypedExpr _ expr, _)
-            = compileExpr locals (simplifyExpression expr)
 
 -- | Compiles a single statement, updating the state with the instructions and any errors.
 compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
@@ -627,6 +461,95 @@ compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
 
     compileExpr locals (ELvalue (LId (Ident pos (lambdaLabel nextLambda))))
 
+
+-- | Compile a `write` statement with a given expression, updating the state with the instructions
+--   and any errors.
+compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
+--   Special case to handle string literals.
+compileWrite _ (LocatedExpr _ (EConst (LitString str)))
+    = addInstrs (ozWriteString str)
+
+compileWrite locals expr = do    
+    current <- getEither
+    let symbols = blockSyms current
+
+    addErrorsOr (analyseExpression symbols locals expr) $ \(TypedExpr ty expr) -> do
+        register <- compileExpr locals (simplifyExpression expr)
+
+        let op TInt  = addInstrs . ozWriteInt
+            op TBool = addInstrs . ozWriteBool
+            op _     = error $ "internal error: attempted to write invalid type "
+                            <> T.unpack (backticks ty)
+            in op ty <?> register
+
+-- | Compile a procedure call given the procedure's name and its actual arguments.
+--   Updates the state with the instructions and any errors.
+compileCall :: LocalTable -> Ident -> [LocatedExpr] -> EitherState BlockState (Maybe Register)
+compileCall locals ident args = do
+    current <- getEither
+    let symbols = blockSyms current
+    let result = do
+        (typedArgs, params, retType) <- typecheckCall symbols locals ident args
+        -- Compile arguments
+        let typedArgs' = zip typedArgs params
+        let currentReg = blockNextReg current
+        let next = current { blockInstrs = [], blockNextReg = currentReg + length args }
+        (registers, final) <- runEither (mapM compileArg typedArgs') next
+
+        -- handle the case where it's a HOF
+        case lookupProc (blockSyms current) (fromIdent ident) of
+            Just _ ->
+                if isTailCall current then do
+                    let stores = concatMap (uncurry ozStore)
+                                           (zip (map StackSlot [0..]) (catMaybes registers))
+
+                    let instrs = stores <> ozBranch (makeProcTailLabel (fromIdent ident))
+                    let nextLambda = blockNextLambda final
+                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
+
+                else do
+                    let moves = concatMap (uncurry ozMove)
+                                          (zip (map Register [0..]) (catMaybes registers))
+
+                    let instrs = moves <> ozCall (makeProcLabel (fromIdent ident))
+                    let nextLambda = blockNextLambda final
+                    return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
+            
+            Nothing -> do
+                (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
+
+                case ptr of 
+                    Just ptr -> do
+                        let moves = concatMap (uncurry ozMove)
+                                              (zip (map Register [0..]) (catMaybes registers))
+                        let instrs = moves <> ozSetVPtr ptr <> ozCall vTableLabel
+                        let nextLambda = blockNextLambda final'
+                        return (blockInstrs final' <> map addIndent instrs, retType, nextLambda)
+                    Nothing -> error "internal error: did not catch all HOF call cases :("
+
+    case result of
+        Left errs    -> do
+            addErrors errs
+            return Nothing
+
+        Right (instrs, retType, nextLambda) -> do
+            addInstrsRaw instrs
+            current' <- getEither
+            putEither (current' { blockNextLambda = nextLambda })
+            return $ case retType of
+                TVoid -> Nothing
+                _     -> Just ozReturnRegister
+    where
+        -- | Compile the argument, loading the address for refsand the value for vals
+        compileArg (TypedExpr _ (ELvalue lvalue), RefSymbol _)
+            = loadAddress locals lvalue
+        compileArg (TypedExpr _ expr, _)
+            = compileExpr locals (simplifyExpression expr)
+
+-----------------------------------
+-- Register Management 
+-----------------------------------
+
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
 loadLvalue locals lvalue = do
     current <- getEither
@@ -888,3 +811,90 @@ vTableLabel = "__vtable"
 lambdaLabel :: Int -> Text
 lambdaLabel i = "__lambda" <> tshow i
 
+
+
+-- | Searches a procedure for any lambda functions, turning them into procedure definitions.
+compileLambdas :: Procedure -> State Int [Procedure]
+compileLambdas (Procedure _ _ _ _ statements)
+    = do
+        procs <- mapM compileLambdasInner statements
+        return $ concat procs
+
+-- | Search the statement for any lambda functions, and turn them into procedure definitions.
+--   The state encodes the current used index.
+compileLambdasInner :: Statement -> State Int [Procedure]
+compileLambdasInner statement
+    = case statement of
+        SAssign _ rhs -> compileExprLambdas rhs
+
+        SCall _ args  -> concat <$> mapM compileExprLambdas args
+
+        SIf expr body -> do
+            exprs <- compileExprLambdas expr
+            inners <- concat <$> mapM compileLambdasInner body
+            return $ exprs <> inners
+
+        SIfElse expr bodyIf bodyElse -> do
+            exprs <- compileExprLambdas expr
+            innersIf <- concat <$> mapM compileLambdasInner bodyIf
+            innersElse <- concat <$> mapM compileLambdasInner bodyElse
+            return $ exprs <> innersIf <> innersElse
+
+        SWhile expr body -> do
+            exprs <- compileExprLambdas expr
+            inners <- concat <$> mapM compileLambdasInner body
+            return $ exprs <> inners
+
+        SReturn expr -> compileExprLambdas expr
+
+        _ -> pure []
+
+-- | Compiles a Lambda Expression 
+compileExprLambdas :: LocatedExpr -> State Int [Procedure]
+compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
+    ls <- compileExprLambdas lhs
+    rs <- compileExprLambdas rhs
+    return $ ls <> rs
+compileExprLambdas (LocatedExpr _ (EUnOp _ inner))
+    = compileExprLambdas inner
+compileExprLambdas (LocatedExpr _ (EFunc _ args))
+    = concat <$> mapM compileExprLambdas args
+compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
+    let (LocatedTypeName _ retTypeInner) = retType
+
+    current <- get
+    put (current + 1)
+    let header = ProcHeader (Ident pos (lambdaLabel current)) params
+
+    return $ pure $ Procedure pos header retTypeInner varDecls body
+
+
+compileExprLambdas _ = pure []
+
+-- | Generates the vtable instructions for the given symbol table. This works by assigning an index
+--   to every procedure, and performing a linear scan on a dedicated register to search for the
+--   appropriate procedure.
+generateVtable :: RootTable -> [Text]
+generateVtable table = mconcat
+    [ [ vTableLabel <> ":" ]
+    , mconcat branches
+    , map addIndent (ozBranch "__vtable_end")
+    , mconcat labels
+    , [ "__vtable_end:" ]
+    , map addIndent $ mconcat
+        [ ozWriteString "invalid virtual pointer: "
+        , ozReadVPtr (Register 0)
+        , ozWriteInt (Register 0)
+        , ozWriteString "\\n(exiting)"
+        , [ "halt" ] ] ]
+    where
+        (branches, labels) = unzip $ map extractVtableData (Map.toAscList (rootVtable table))
+        extractVtableData (index, (_, locals)) = (branch, target)
+            where
+                procName = localProcName locals
+                label  = "__vptr_" <> procName
+                branch = map addIndent (ozCmpBranchVPtr index label)
+                target = mconcat
+                    [ [ label <> ":" ]
+                    , map addIndent (ozCall (makeProcLabel procName))
+                    , [ addIndent "return" ] ]

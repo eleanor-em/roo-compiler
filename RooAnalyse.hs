@@ -142,10 +142,12 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
                  , ", found "
                  , backticks ltype ]
 
+-- For functions, we want to make sure it's a valid function call 
 typecheckExpression table locals expr@(EFunc func args) = do
     (_, _, ty) <- typecheckCall table locals func args
     return $ TypedExpr ty expr
 
+-- For lambda expressions, we identify if it returns a primitive or not 
 typecheckExpression table _ expr@(ELambda params (LocatedTypeName _ retType) _ _) = do
     paramTys <- mapM (toProcSym table) params
     let retType' = case retType of
@@ -159,6 +161,7 @@ returnsValue (SReturn _) = True
 returnsValue (SIfElse _ bodyIf bodyElse) = any returnsValue bodyIf && any returnsValue bodyElse
 returnsValue _ = False
 
+-- | Typechecks a call expression to ensure the func/proc exists with well-formed arguments 
 typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
                            -> Either [AnalysisError] ([TypedExpr], [ProcSymType], Type)
 typecheckCall table locals (Ident pos name) args = do
@@ -211,7 +214,7 @@ typecheckCall table locals (Ident pos name) args = do
 -----------------------------------
 -- Expression Optimisation 
 -----------------------------------
-
+-- | Simplify a given expression by recursively evaluating expressions as much as possible
 simplifyExpression :: Expression -> Expression
 simplifyExpression (EUnOp UnNot inner)
     = case simplifyExpression (fromLocated inner) of
@@ -286,32 +289,46 @@ simplifyExpression expr = expr
 -- Lvalue Analysis 
 -----------------------------------
 
+-- | A TypedLvalue tracks the following information:
+--     * pass-by-ref/value mode 
+--     * expected type of the lvalue expression
+--     * its root stackslot position
+--     * an expression that may/may not evalute to the offset from the root slot 
+--     * the name 
+--     * source position of the lvalue in the source file 
 data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
                  | TypedValLvalue Type StackSlot Expression Text SourcePos
 
+-- | Visualising lvalue types
 instance Show TypedLvalue where
     show lval = show (lvalueName lval) <> " (" <> show (lvalueType lval) <> ")"
 
+-- Extracting the type from our TypedLvalue
 lvalueType :: TypedLvalue -> Type
 lvalueType (TypedRefLvalue ty _ _ _ _) = ty
 lvalueType (TypedValLvalue ty _ _ _ _) = ty
 
+-- Extracting the root stack slot location from our TypedLvalue
 lvalueLocation :: TypedLvalue -> StackSlot
 lvalueLocation (TypedRefLvalue _ loc _ _ _) = loc
 lvalueLocation (TypedValLvalue _ loc _ _ _) = loc
 
+-- Extracting the expression offset from our TypedLvalue
 lvalueOffset :: TypedLvalue -> Expression
 lvalueOffset (TypedRefLvalue _ _ off _ _) = off
 lvalueOffset (TypedValLvalue _ _ off _ _) = off
 
+-- Extracting the name from our TypedLvalue
 lvalueName :: TypedLvalue -> Text
 lvalueName (TypedRefLvalue _ _ _ name _) = name
 lvalueName (TypedValLvalue _ _ _ name _) = name
 
+-- Extracting the Source position from out TypedLvalue
 lvaluePos :: TypedLvalue -> SourcePos
 lvaluePos (TypedRefLvalue _ _ _ _ pos) = pos
 lvaluePos (TypedValLvalue _ _ _ _ pos) = pos
 
+-- Converting a ProcSymbol into a TypedLvalue by attaching its `mode` to an Lvalue Expression
 symToTypedLvalue :: ProcSymbol -> Expression -> TypedLvalue
 symToTypedLvalue (ProcSymbol (RefSymbol ty) slot pos name) offset
     = TypedRefLvalue ty slot offset name pos
@@ -319,9 +336,11 @@ symToTypedLvalue (ProcSymbol (RefSymbol ty) slot pos name) offset
 symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
     = TypedValLvalue ty slot offset name pos
 
+-- An expression representation for there being no offset 
 noOffset :: Expression
 noOffset = EConst (LitInt 0)
 
+-- | Analyse a given Lvalue expression and identify if it is semantically valid 
 analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
 analyseLvalue _ locals (LId (Ident pos name)) = do
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
