@@ -6,7 +6,7 @@ procedure main ()
 {
     call generate(arr);
 
-    call for_each((integer val x) -> {
+    call for_each(lambda (integer val x) {
         write x;
         write " ";
     }, arr);

@@ -122,7 +122,7 @@ data Expression
     | EBinOp BinOp LocatedExpr LocatedExpr
     | EUnOp UnOp LocatedExpr
     | EFunc Ident [LocatedExpr]
-    | ELambda [Parameter] TypeName [VarDecl] [Statement]
+    | ELambda [Parameter] LocatedTypeName [VarDecl] [Statement]
     deriving (Show, Eq)
 
 liftExpr :: Expression -> LocatedExpr

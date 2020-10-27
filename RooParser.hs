@@ -437,7 +437,7 @@ pLambda = do
     pos <- sourcePos
     pKeyword "lambda"
     params <- parens (pFormalParam `sepBy` comma)
-    retType <- LocatedTypeName pos <$> option VoidTypeName (reservedOp "->" *> pReturnType)
+    retType <- LocatedTypeName pos <$> (option VoidTypeName (reservedOp "->" *> pReturnType))
     varDecls <- many pVarDecl
     statements <- braces (many pStatement);
     return $ LocatedExpr pos $ ELambda params retType varDecls statements

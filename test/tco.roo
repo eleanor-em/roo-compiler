@@ -1,6 +1,7 @@
 procedure main ()
 {
     writeln double_tco(100000);
+    call void_tco(100000);
     writeln double_naive(100000);
 }
 
@@ -24,5 +25,18 @@ procedure double_tco'(integer val x, integer val acc) -> integer
         return double_tco'(x - 1, acc + 2);
     else
         return acc;
+    fi
+}
+
+procedure void_tco(integer val x)
+{
+    call void_tco'(x, x);
+    writeln x;
+}
+
+procedure void_tco'(integer val x, integer acc)
+{
+    if x > 0 then
+    
     fi
 }
