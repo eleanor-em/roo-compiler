@@ -190,6 +190,10 @@ verifyProgram program includes = do
     let (symbols', errs, procs) = compileSymbols (mconcat symbols) program
     fst $ compileWithSymbols symbols' errs procs
 
+-----------------------------------
+-- Main Compilation Functions  
+-----------------------------------
+
 -- | Compiles a program.
 compileProgram :: Program -> ([AnalysisError], [Text])
 compileProgram program = do
@@ -546,13 +550,6 @@ compileStatement locals st@(SReturn expr) = do
                 _ -> compile
             addInstrs $ blockEpilogue current
 
-getLabel :: EitherState BlockState Text 
-getLabel = do 
-    current <- getEither 
-    let currentLabel = nextLabel current 
-    putEither (current { nextLabel = currentLabel + 1})
-    return $ "label_" <> (tshow currentLabel)
-
 compileExpr :: LocalTable -> Expression -> EitherState BlockState (Maybe Register)
 compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue
 
@@ -857,6 +854,15 @@ popRegister register = do
 
     addInstrs $ ozMove register (ozExtraRegisters head)
 
+-------
+
+getLabel :: EitherState BlockState Text 
+getLabel = do 
+    current <- getEither 
+    let currentLabel = nextLabel current 
+    putEither (current { nextLabel = currentLabel + 1})
+    return $ "label_" <> (tshow currentLabel)
+
 -----------------------------------
 -- Text processing for prettifying generated Oz code
 -----------------------------------
@@ -881,3 +887,4 @@ vTableLabel = "__vtable"
 
 lambdaLabel :: Int -> Text
 lambdaLabel i = "__lambda" <> tshow i
+
