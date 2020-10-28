@@ -473,3 +473,14 @@ modifiesLvalue lval (SWhile _ body)
     = any (modifiesLvalue lval) body
 
 modifiesLvalue _ _ = False
+
+typeCheckCondition :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] Expression 
+typeCheckCondition symbols locals expr = do 
+    TypedExpr ty expr' <- analyseExpression symbols locals expr
+
+    -- condition expression is incorrectly typed 
+    if ty /= TBool then 
+        Left $ errorPos (locate expr)
+                        ("expecting `boolean`, found " <> backticks ty)
+    else
+        return expr'

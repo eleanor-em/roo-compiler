@@ -15,7 +15,7 @@ import Oz
 import RooPrettyPrinter (prettyStatement, prettyExpr)
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
-
+import RooPreprocessor 
 
 -- | Global state for the compiler. Stores:
 --   * the root-level symbol table
@@ -36,51 +36,24 @@ data BlockState = BlockState
     , blockEpilogue :: [Text]
     , blockNextLambda :: Int }
 
--- | Creates an empty block state from the given symbol table.
-initialBlockState :: RootTable -> BlockState
-initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
+-----------------------------------
+-- Pre-Compilation Steps
+-----------------------------------
 
--- | Adds the "this is a tail call" flag to the state.
-setTailCall :: EitherState BlockState ()
-setTailCall = do
-    current <- getEither
-    putEither (current { isTailCall = True })
+-- | Returns any syntax errors from a program, drawing symbols from a list of includes.
+verifyProgram :: Program -> [Program] -> [AnalysisError]
+verifyProgram program includes = do
+    -- Extract symbols from the includes...
+    let (symbols, _, _) = unzip3 $ map (compileSymbols mempty) includes
+    -- ...then finish the symbols with the main file
+    let (symbols', errs, procs) = compileSymbols (mconcat symbols) program
+    fst $ compileWithSymbols symbols' errs procs
 
--- | Removes the "this is a tail call" flag from the state.
-unsetTailCall :: EitherState BlockState ()
-unsetTailCall = do
-    current <- getEither
-    putEither (current { isTailCall = False })
-
--- | Add instructions to the state with indentation.
-addInstrs :: [Text] -> EitherState BlockState ()
-addInstrs instrs = addInstrsRaw (map addIndent instrs)
-
--- | Add instructions to the state without indentation.
-addInstrsRaw :: [Text] -> EitherState BlockState ()
-addInstrsRaw instrs = do
-    current <- getEither
-    let prevInstrs = blockInstrs current
-    putEither (current { blockInstrs = prevInstrs <> instrs})
-
-
--- | Creates a comment by pretty-printing the statement.
---   Doesn't work nicely for multi-line statements.
-commentStatement :: Statement -> EitherState BlockState ()
-commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
-
-
--- | Compiles the symbols in a given program, with an initial symbol table provided.
-compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
-compileSymbols initial (Program recs arrs procs) = (symbols, errs, procs')
+-- | Compiles a program fragment; that is, a program that may not have a main procedure.
+compileProgramFragment :: Program -> ([AnalysisError], [Text])
+compileProgramFragment program = compileWithSymbols symbols errs procs
     where
-        -- Count the number of lambda functions in the initial table
-        lambdaCount = Map.size $ Map.filterWithKey (\key _ -> "__lambda" `T.isInfixOf` key)
-                                                   (rootProcs initial)
-
-        procs' = procs <> concat (evalState (mapM compileLambdas procs) lambdaCount)
-
-        (errs, symbols) = getAllSymbols (Program recs arrs procs') initial
+        (symbols, errs, procs) = compileSymbols mempty program
 
 -- | Compile the program with the given symbol table, previous errors, and procedure list.
 compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisError], [Text])
@@ -98,20 +71,17 @@ compileWithSymbols symbols errs procs = do
         separate = map (<> "\n")
         addHeader symbols = ((["call proc_main", "halt"] <> generateVtable symbols) <>)
 
--- | Compiles a program fragment; that is, a program that may not have a main procedure.
-compileProgramFragment :: Program -> ([AnalysisError], [Text])
-compileProgramFragment program = compileWithSymbols symbols errs procs
+-- | Compiles the symbols in a given program, with an initial symbol table provided.
+compileSymbols :: RootTable -> Program -> (RootTable, [AnalysisError], [Procedure])
+compileSymbols initial (Program recs arrs procs) = (symbols, errs, procs')
     where
-        (symbols, errs, procs) = compileSymbols mempty program
+        -- Count the number of lambda functions in the initial table
+        lambdaCount = Map.size $ Map.filterWithKey (\key _ -> "__lambda" `T.isInfixOf` key)
+                                                   (rootProcs initial)
 
--- | Returns any syntax errors from a program, drawing symbols from a list of includes.
-verifyProgram :: Program -> [Program] -> [AnalysisError]
-verifyProgram program includes = do
-    -- Extract symbols from the includes...
-    let (symbols, _, _) = unzip3 $ map (compileSymbols mempty) includes
-    -- ...then finish the symbols with the main file
-    let (symbols', errs, procs) = compileSymbols (mconcat symbols) program
-    fst $ compileWithSymbols symbols' errs procs
+        procs' = procs <> concat (evalState (mapM compileLambdas procs) lambdaCount)
+
+        (errs, symbols) = getAllSymbols (Program recs arrs procs') initial
 
 -----------------------------------
 -- Main Compilation Functions  
@@ -170,58 +140,74 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
 
         Nothing  -> error "internal error: missed a procedure somehow"
 
+-----------------------------------
+-- Compiling Statements 
+-----------------------------------
+
 -- | Compiles a single statement, updating the state with the instructions and any errors.
 compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
--- | write expr;
+
+--   Compiles a `write` statement 
 compileStatement locals st@(SWrite expr) = do
+
     commentStatement st
     compileWrite locals expr
 
--- | writeln expr;
+--   Compiles a `writeln` statement
 compileStatement locals st@(SWriteLn expr) = do
-    commentStatement st
 
+    commentStatement st
     compileWrite locals expr
     addInstrs (ozWriteString "\\n")
 
--- | lvalue <- expr;
+--   Compiles an `lvalue <- expr` statement
 compileStatement locals st@(SAssign lvalue expr) = do
-    commentStatement st
 
+    commentStatement st
     current <- getEither
     let symbols = blockSyms current
 
+    -- Extract information from lval/rval 
     let analysed = do
         TypedExpr ty' expr' <- analyseExpression symbols locals expr
         sym <- analyseLvalue symbols locals lvalue
         return (ty', expr', sym)
 
+    -- If no errors occur analysing our lval/rval, we compile 
     addErrorsOr analysed $ \(ty', expr', sym) -> do
+
+        -- Ensure matching types for assignments 
         let ty = lvalueType sym
         if ty /= ty' then
             addErrors $ errorPos (locate expr)
                                  ("cannot assign " <> backticks ty' <> " to " <> backticks ty)
         else
+            -- Handle evaluated primitive 
             if isPrimitive ty || isFunction ty then do
                 register <- compileExpr locals (simplifyExpression expr')
                 storeSymbol locals sym <?> register
+            
+            -- Handle record/array assignments 
             else case expr' of
                 ELvalue lvalue' -> do
                     addErrorsOr (analyseLvalue symbols locals lvalue')
                                 (\sym' -> copyContents locals sym sym' (sizeof ty'))
                 _ -> error "internal error: somehow had primitive on rhs when expecting lvalue"
 
+--   Compiles a `read` statement 
 compileStatement locals st@(SRead lvalue) = do
-    commentStatement st
 
+    commentStatement st
     current <- getEither
     let symbols = blockSyms current
+
     -- reserve a register for reading the value
     _ <- useRegister
 
     addErrorsOr (analyseLvalue symbols locals lvalue) $ \sym -> do
         let ty = lvalueType sym
 
+        -- only allow reading primitives 
         case ty of
             TInt  -> addInstrs ozReadInt
             TBool -> addInstrs ozReadBool
@@ -230,99 +216,83 @@ compileStatement locals st@(SRead lvalue) = do
 
         storeLvalue locals lvalue (Register 0)
 
+--   Compiles a `call` statement 
 compileStatement locals st@(SCall ident args) = do
+
     commentStatement st
     compileCall locals ident args
     pure ()
 
--- dealing with if statements  
+--   Compiles an `if` statement
 compileStatement locals (SIf expr statements) = do 
-    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
 
+    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
     current <- getEither
     let symbols = blockSyms current
     fiLabel <- getLabel 
 
-    addErrorsOr (analyse symbols) $ \expr' -> do 
-        case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $
-                warnPos (locate expr)
-                        ("`if` condition is always " <> tshowBool val)
-            _ -> pure ()
+    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
 
-        -- get the register where true/false is stored + the current state after compilation
-        register <- compileExpr locals (simplifyExpression expr')
+        -- report trivial cases for conditional expressions
+        checkConditionState "if" expr
+
+        register <- compileExpr locals (simplifyExpression expr')        
         addInstrs (ozBranchOnFalse (fromJust register) fiLabel) 
+
+        -- compile potential nested statements  
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
+        
         addInstrs $ makeComment "fi"
         addInstrsRaw [fiLabel <> ":"]
-    where
-        analyse symbols = do 
-            TypedExpr ty expr' <- analyseExpression symbols locals expr
 
-            -- condition expression is incorrectly typed 
-            if ty /= TBool then 
-                Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found " <> backticks ty)
-            else
-                return expr'
-
--- dealing with if/Else statements  
+--   Compiles an `if/Else` statement 
 compileStatement locals (SIfElse expr ifStatements elseStatements) = do 
-    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
 
+    addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
     current <- getEither
     let symbols = blockSyms current
     elseLabel <- getLabel 
     afterLabel <- getLabel
 
-    addErrorsOr (analyse symbols) $ \expr' -> do 
-        case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $
-                warnPos (locate expr)
-                        ("`if` condition is always " <> tshowBool val)
-            _ -> pure ()
+    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
 
-        -- get the register where true/false is stored + the current state after compilation
+        -- report trivial cases for conditional expressions
+        checkConditionState "if" expr
+
         register <- compileExpr locals (simplifyExpression expr')
+
         -- if condition is false -> go to else 
         addInstrs (ozBranchOnFalse (fromJust register) elseLabel) 
-        -- otherwise do these statements 
+
+        -- otherwise compile potential nested statements 
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) ifStatements 
+        
         -- now goto after the if block 
         addInstrs (ozBranch afterLabel)
         addInstrs $ makeComment "else"
         addInstrsRaw [elseLabel <> ":"]
+
+        -- compile potential nested statements 
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) elseStatements
+        
         addInstrs $ makeComment "fi"
         addInstrsRaw [afterLabel <> ":"]
-    where
-        analyse symbols = do 
-            TypedExpr ty expr' <- analyseExpression symbols locals expr
 
-            -- condition expression is incorrectly typed 
-            if ty /= TBool then 
-                Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found " <> backticks ty)
-            else
-                return expr'
-
--- dealing with while statements  
+--   Compiles a `while` statement
 compileStatement locals (SWhile expr statements) = do 
-    addInstrs $ makeComment ("while " <> prettyExpr (fromLocated expr) <> " do")
 
+    addInstrs $ makeComment ("while " <> prettyExpr (fromLocated expr) <> " do")
     current <- getEither
     let symbols = blockSyms current
     beginLabel <- getLabel
     falseLabel <- getLabel 
 
-    addErrorsOr (analyse symbols) $ \expr' -> do 
-        case simplifyExpression expr' of
-            EConst (LitBool val) -> addErrors $
-                warnPos (locate expr)
-                        ("`while` condition is always " <> tshowBool val)
-            _ -> pure ()
+    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
+        
+        -- report trivial cases for conditional expressions
+        checkConditionState "while" expr
 
+        -- Check for trivial cases of possible infinite loops
         let conditionLvals = lvaluesOf (fromLocated expr)
         let nonModifiedLvals = filter (\lval -> not (any (modifiesLvalue lval) statements))
                                       conditionLvals
@@ -333,37 +303,32 @@ compileStatement locals (SWhile expr statements) = do
                 "possible infinite loop: the condition does not change between iterations")
 
         addInstrsRaw [beginLabel <> ":"]
-        -- get the register where true/false is stored + the current state after compilation
+        
         register <- compileExpr locals (simplifyExpression expr')
+
         -- if condition is false --> skip the while loop 
         addInstrs (ozBranchOnFalse (fromJust register) falseLabel) 
-        -- otherwise do these statements
+
+        -- otherwise compile potential nested statements 
         mapM_ (\st -> resetBlockRegs >> compileStatement locals st) statements 
-        -- go to start 
+        
+        -- repeat while loop  
         addInstrs (ozBranch beginLabel)
         addInstrs $ makeComment "od"
         addInstrsRaw [falseLabel <> ":"]
-        
-    where
-        analyse symbols = do 
-            TypedExpr ty expr' <- analyseExpression symbols locals expr
 
-            -- condition expression is incorrectly typed 
-            if ty /= TBool then 
-                Left $ errorPos (locate expr)
-                                ("expecting `boolean`, found " <> backticks ty)
-            else
-                return expr'
-
+--   Compiles a `return` statement
 compileStatement locals st@(SReturn expr) = do
-    commentStatement st
 
+    commentStatement st
     current <- getEither
     let symbols = blockSyms current
 
     addErrorsOr (analyseExpression symbols locals expr) $ \(TypedExpr ty expr') -> do
+        
         let ty' = localRetType locals
 
+        -- Make sure return type is appropriate 
         if ty /= ty' then
             addErrors $ errorPos (locate expr)
                                  ("expecting " <> backticks ty' <> " on RHS of `return`, found "
@@ -372,6 +337,7 @@ compileStatement locals st@(SReturn expr) = do
             let compile = do
                 register <- compileExpr locals (simplifyExpression expr')
                 (addInstrs . ozMove ozReturnRegister) <?> register
+
             -- Tail call optimisation :-)
             case expr' of
                 EFunc target _ ->
@@ -382,16 +348,29 @@ compileStatement locals st@(SReturn expr) = do
                     else
                         compile
                 _ -> compile
+
             addInstrs $ blockEpilogue current
 
+-----------------------------------
+-- Compiling Expressions 
+-----------------------------------
+
+-- | Compiles a single expression, updating the state with the instructions and any errors. 
 compileExpr :: LocalTable -> Expression -> EitherState BlockState (Maybe Register)
+
+--   Compiles an `lvalue` expression
 compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue
 
+--   Compiles a `constant`
 compileExpr _ (EConst lit) = Just <$> loadConst lit
 
+--   Compiles `unary` expression
 compileExpr locals (EUnOp op expr) = do
+
     eval <- compileExpr locals (fromLocated expr)
+
     case eval of
+
         Just eval -> do
             result <- useRegister
             addInstrs (ozOp result eval)
@@ -403,10 +382,14 @@ compileExpr locals (EUnOp op expr) = do
             UnNot    -> ozNot
             UnNegate -> ozNeg
 
+--   Compiles `binaryOp` expression 
 compileExpr locals (EBinOp op lexp rexp) = do
+
     lhs <- compileExpr locals (fromLocated lexp)
     rhs <- compileExpr locals (fromLocated rexp)
+
     case (lhs, rhs) of
+
         (Just lhs, Just rhs) -> do
             result <- useRegister
             addInstrs (ozOp result lhs rhs)
@@ -428,11 +411,14 @@ compileExpr locals (EBinOp op lexp rexp) = do
             BinTimes -> ozTimes
             BinDivide -> ozDivide
 
+--   Compiles a `function` expression 
 compileExpr locals (EFunc func args) = do
+
     current <- getEither
     let usedRegisters = blockNextReg current - 1
 
     when (usedRegisters >= 0) (do
+
         -- Save the current registers
         addInstrs $ makeComment "push registers"
         mapM_ (pushRegister . Register) [0..usedRegisters])
@@ -443,6 +429,7 @@ compileExpr locals (EFunc func args) = do
     addInstrs $ ozMove result ozReturnRegister
 
     when (usedRegisters >= 0) (do
+
         -- Save the current registers
         addInstrs $ makeComment "pop registers"
         mapM_ (popRegister . Register) [0..usedRegisters])
@@ -451,7 +438,9 @@ compileExpr locals (EFunc func args) = do
         Just _   -> return $ Just result
         _        -> return Nothing
 
+--   Compiles a `lambda` expression 
 compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
+
     -- Allocate a lambda
     current <- getEither
     let nextLambda = blockNextLambda current
@@ -461,14 +450,19 @@ compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
 
     compileExpr locals (ELvalue (LId (Ident pos (lambdaLabel nextLambda))))
 
+-----------------------------------
+-- Compiling Write Statements 
+-----------------------------------
 
 -- | Compile a `write` statement with a given expression, updating the state with the instructions
 --   and any errors.
 compileWrite :: LocalTable -> LocatedExpr -> EitherState BlockState ()
+
 --   Special case to handle string literals.
 compileWrite _ (LocatedExpr _ (EConst (LitString str)))
     = addInstrs (ozWriteString str)
 
+--   Compile a given expression to be written 
 compileWrite locals expr = do    
     current <- getEither
     let symbols = blockSyms current
@@ -482,14 +476,21 @@ compileWrite locals expr = do
                             <> T.unpack (backticks ty)
             in op ty <?> register
 
+-----------------------------------
+-- Compiling Call Statements 
+-----------------------------------
+
 -- | Compile a procedure call given the procedure's name and its actual arguments.
 --   Updates the state with the instructions and any errors.
 compileCall :: LocalTable -> Ident -> [LocatedExpr] -> EitherState BlockState (Maybe Register)
 compileCall locals ident args = do
+
     current <- getEither
     let symbols = blockSyms current
     let result = do
+
         (typedArgs, params, retType) <- typecheckCall symbols locals ident args
+
         -- Compile arguments
         let typedArgs' = zip typedArgs params
         let currentReg = blockNextReg current
@@ -547,7 +548,7 @@ compileCall locals ident args = do
             = compileExpr locals (simplifyExpression expr)
 
 -----------------------------------
--- Register Management 
+-- Compiling Lvalues 
 -----------------------------------
 
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
@@ -777,8 +778,44 @@ popRegister register = do
 
     addInstrs $ ozMove register (ozExtraRegisters head)
 
--------
+-----------------------------------
+-- General BlockState Management 
+-----------------------------------
 
+-- | Creates an empty block state from the given symbol table.
+initialBlockState :: RootTable -> BlockState
+initialBlockState symbols = BlockState symbols [] 0 0 0 False [] 0
+
+-- | Adds the "this is a tail call" flag to the state.
+setTailCall :: EitherState BlockState ()
+setTailCall = do
+    current <- getEither
+    putEither (current { isTailCall = True })
+
+-- | Removes the "this is a tail call" flag from the state.
+unsetTailCall :: EitherState BlockState ()
+unsetTailCall = do
+    current <- getEither
+    putEither (current { isTailCall = False })
+
+-- | Add instructions to the state with indentation.
+addInstrs :: [Text] -> EitherState BlockState ()
+addInstrs instrs = addInstrsRaw (map addIndent instrs)
+
+-- | Add instructions to the state without indentation.
+addInstrsRaw :: [Text] -> EitherState BlockState ()
+addInstrsRaw instrs = do
+    current <- getEither
+    let prevInstrs = blockInstrs current
+    putEither (current { blockInstrs = prevInstrs <> instrs})
+
+-- | Adds a comment to the state by pretty-printing the statement.
+--   Doesn't work nicely for multi-line statements.
+commentStatement :: Statement -> EitherState BlockState ()
+commentStatement st = addInstrs $ makeComment $ prettyStatement 0 st
+
+-- | Get the next available label from the state and update the counter
+-- for next use & format the label as appropriate. 
 getLabel :: EitherState BlockState Text 
 getLabel = do 
     current <- getEither 
@@ -787,114 +824,13 @@ getLabel = do
     return $ "label_" <> (tshow currentLabel)
 
 -----------------------------------
--- Text processing for prettifying generated Oz code
+-- General Helper Functions 
 -----------------------------------
 
-addIndent :: Text -> Text
-addIndent "" = ""
-addIndent str
-    | T.head str == '#' = str
-    | otherwise         = "    " <> str
-
-makeComment :: Text -> [Text]
-makeComment str = ["# " <> T.replace "\n" "" str]
-
-makeProcLabel :: Text -> Text
-makeProcLabel = ("proc_" <>)
-
-makeProcTailLabel :: Text -> Text
-makeProcTailLabel name = "proc_" <> name <> "_loaded"
-
-vTableLabel :: Text
-vTableLabel = "__vtable"
-
-lambdaLabel :: Int -> Text
-lambdaLabel i = "__lambda" <> tshow i
-
-
-
--- | Searches a procedure for any lambda functions, turning them into procedure definitions.
-compileLambdas :: Procedure -> State Int [Procedure]
-compileLambdas (Procedure _ _ _ _ statements)
-    = do
-        procs <- mapM compileLambdasInner statements
-        return $ concat procs
-
--- | Search the statement for any lambda functions, and turn them into procedure definitions.
---   The state encodes the current used index.
-compileLambdasInner :: Statement -> State Int [Procedure]
-compileLambdasInner statement
-    = case statement of
-        SAssign _ rhs -> compileExprLambdas rhs
-
-        SCall _ args  -> concat <$> mapM compileExprLambdas args
-
-        SIf expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
-
-        SIfElse expr bodyIf bodyElse -> do
-            exprs <- compileExprLambdas expr
-            innersIf <- concat <$> mapM compileLambdasInner bodyIf
-            innersElse <- concat <$> mapM compileLambdasInner bodyElse
-            return $ exprs <> innersIf <> innersElse
-
-        SWhile expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
-
-        SReturn expr -> compileExprLambdas expr
-
-        _ -> pure []
-
--- | Compiles a Lambda Expression 
-compileExprLambdas :: LocatedExpr -> State Int [Procedure]
-compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
-    ls <- compileExprLambdas lhs
-    rs <- compileExprLambdas rhs
-    return $ ls <> rs
-compileExprLambdas (LocatedExpr _ (EUnOp _ inner))
-    = compileExprLambdas inner
-compileExprLambdas (LocatedExpr _ (EFunc _ args))
-    = concat <$> mapM compileExprLambdas args
-compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
-    let (LocatedTypeName _ retTypeInner) = retType
-
-    current <- get
-    put (current + 1)
-    let header = ProcHeader (Ident pos (lambdaLabel current)) params
-
-    return $ pure $ Procedure pos header retTypeInner varDecls body
-
-
-compileExprLambdas _ = pure []
-
--- | Generates the vtable instructions for the given symbol table. This works by assigning an index
---   to every procedure, and performing a linear scan on a dedicated register to search for the
---   appropriate procedure.
-generateVtable :: RootTable -> [Text]
-generateVtable table = mconcat
-    [ [ vTableLabel <> ":" ]
-    , mconcat branches
-    , map addIndent (ozBranch "__vtable_end")
-    , mconcat labels
-    , [ "__vtable_end:" ]
-    , map addIndent $ mconcat
-        [ ozWriteString "invalid virtual pointer: "
-        , ozReadVPtr (Register 0)
-        , ozWriteInt (Register 0)
-        , ozWriteString "\\n(exiting)"
-        , [ "halt" ] ] ]
-    where
-        (branches, labels) = unzip $ map extractVtableData (Map.toAscList (rootVtable table))
-        extractVtableData (index, (_, locals)) = (branch, target)
-            where
-                procName = localProcName locals
-                label  = "__vptr_" <> procName
-                branch = map addIndent (ozCmpBranchVPtr index label)
-                target = mconcat
-                    [ [ label <> ":" ]
-                    , map addIndent (ozCall (makeProcLabel procName))
-                    , [ addIndent "return" ] ]
+checkConditionState :: Text -> LocatedExpr -> EitherState BlockState ()
+checkConditionState st expr = do 
+    case simplifyExpression (fromLocated expr) of
+        EConst (LitBool val) -> addErrors $
+            warnPos (locate expr)
+                    ("`" <> st <> "`" <> " condition is always " <> tshowBool val)
+        _ -> pure ()
