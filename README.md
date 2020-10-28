@@ -163,7 +163,8 @@ at instruction 1584017, pc 57: stack overflow
 We do this by compiling an extra label into the procedure after arguments have been loaded but
 before locals have been initialised. If a statement of the form `return this();` is detected, the
 compiler emits an unconditional branch instruction instead of a call instruction (so that a new
-stack frame is not pushed).
+stack frame is not pushed). The optimisation is also performed if the last statement in a procedure
+call is of the form `call this():`.
 ```
 proc_double_tco':
 # prologue
