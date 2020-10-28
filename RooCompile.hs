@@ -359,7 +359,7 @@ compileStatement locals st@(SReturn expr) = do
 compileExpr :: LocalTable -> Expression -> EitherState BlockState (Maybe Register)
 
 --   Compiles an `lvalue` expression
-compileExpr locals (ELvalue lvalue) = loadLvalue locals lvalue
+compileExpr locals (ELvalue lvalue) = compileLvalue locals lvalue
 
 --   Compiles a `constant`
 compileExpr _ (EConst lit) = Just <$> loadConst lit
@@ -450,6 +450,26 @@ compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
 
     compileExpr locals (ELvalue (LId (Ident pos (lambdaLabel nextLambda))))
 
+-- | Compiling lvalue expressions 
+compileLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
+compileLvalue locals lvalue = do
+    current <- getEither
+
+    case analyseLvalue (blockSyms current) locals lvalue of
+        Left errs -> case lvalue of
+            LId (Ident _ name) ->
+                case Map.lookup name (rootFuncPtrs $ blockSyms current) of
+                    Just (procIndex, _) ->
+                        pure <$> loadConst (LitInt procIndex)
+
+                    Nothing -> do 
+                        addErrors errs
+                        return Nothing
+            _ -> do
+                addErrors errs
+                return Nothing
+        Right sym -> loadSymbol locals sym
+
 -----------------------------------
 -- Compiling Write Statements 
 -----------------------------------
@@ -517,7 +537,7 @@ compileCall locals ident args = do
                     return (blockInstrs final <> map addIndent instrs, retType, nextLambda)
             
             Nothing -> do
-                (ptr, final') <- runEither (loadLvalue locals (LId ident)) final
+                (ptr, final') <- runEither (compileLvalue locals (LId ident)) final
 
                 case ptr of 
                     Just ptr -> do
@@ -551,15 +571,20 @@ compileCall locals ident args = do
 -- Compile Statements Helper Functions 
 -----------------------------------
 
+-- | Function for copying the contents of arrays and records in assignments
 copyContents :: LocalTable -> TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
 copyContents locals lval rval size = do
-    -- Calculate the offsets here and then pass through the offsetReg with our own register 
+
+    -- Calculate the offsets from root slot for both lval/rval
     offsetReg' <- compileExpr locals (lvalueOffset lval)
     offsetReg'' <- compileExpr locals (lvalueOffset rval)
+
     case (offsetReg', offsetReg'') of 
         (Just offsetReg', Just offsetReg'') -> copyContentsRec lval rval offsetReg' offsetReg'' size 
         _ ->  pure $ ()
-    
+
+-- | Function that recursively copies the contents of the stack slots until 
+--   we've hit the total size of our array/record 
 copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Register -> Int -> EitherState BlockState ()
 copyContentsRec _ _ _ _ 0 = pure $ ()
 copyContentsRec lval rval lOffset rOffset slotsRemaining = do 
@@ -568,12 +593,17 @@ copyContentsRec lval rval lOffset rOffset slotsRemaining = do
     fromRegister <- loadSlot rval rOffset 
     
     -- using the address from before, store content into our lval 
-    storeContent lval lOffset fromRegister
+    storeSlot lval lOffset fromRegister
+
+    -- increment our offset registers to move onto the next slots 
     incrReg <- loadConst (LitInt 1) 
     addInstrs $ ozPlus rOffset rOffset incrReg 
     addInstrs $ ozPlus lOffset lOffset incrReg
+
     copyContentsRec lval rval lOffset rOffset (slotsRemaining - 1)
 
+-- | Check whether the conditional expression is just `true` or `false`
+--   and adds and error to our state 
 checkConditionState :: Text -> LocatedExpr -> EitherState BlockState ()
 checkConditionState st expr = do 
     case simplifyExpression (fromLocated expr) of
@@ -585,26 +615,6 @@ checkConditionState st expr = do
 -----------------------------------
 -- Generating Loading Lvalues in Oz
 -----------------------------------
-
-loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
-loadLvalue locals lvalue = do
-    current <- getEither
-
-    case analyseLvalue (blockSyms current) locals lvalue of
-        Left errs -> case lvalue of
-            LId (Ident _ name) ->
-                case Map.lookup name (rootFuncPtrs $ blockSyms current) of
-                    Just (procIndex, _) ->
-                        pure <$> loadConst (LitInt procIndex)
-
-                    Nothing -> do 
-                        addErrors errs
-                        return Nothing
-            _ -> do
-                addErrors errs
-                return Nothing
-        Right sym -> loadSymbol locals sym
-
 
 loadAddress :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
 loadAddress locals lvalue = do
@@ -642,7 +652,6 @@ loadAddress locals lvalue = do
 loadSymbol :: LocalTable -> TypedLvalue -> EitherState BlockState (Maybe Register)
 loadSymbol locals lval = do
     let offset = lvalueOffset lval
-    -- let location = lvalueLocation lval
 
     if noOffset == offset then do
         register <- useRegister
@@ -667,24 +676,29 @@ loadSymbol locals lval = do
                 addInstrs $ ozLoad ptr (lvalueLocation lval)
                          <> ozLoadIndirect register ptr
 
+-- | Generate Oz code for loading int/bool constants 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do
+
     register <- useRegister
     addInstrs $ ozBoolConst register val
     return register
 
 loadConst (LitInt val) = do
+
     register <- useRegister
     addInstrs $ ozIntConst register val
     return register
 
 loadConst _ = error "internal error: tried to load Text constant"
 
--- handle offset needs to be handled per rval and lval 
+-- | Load a particular stack stock with offsets 
 loadSlot :: TypedLvalue -> Register -> EitherState BlockState Register 
 loadSlot lval offsetReg = do
+
     register <- useRegister 
     baseReg <- useRegister 
+
     addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
             <> ozSubOffset baseReg baseReg offsetReg
             <> ozLoadIndirect register baseReg 
@@ -698,13 +712,15 @@ loadSlot lval offsetReg = do
 -----------------------------------
 -- Generating Storing Lvalues in Oz
 -----------------------------------
-    
+
+-- | Store Lvalues in the given register 
 storeLvalue :: LocalTable -> Lvalue -> Register -> EitherState BlockState ()
 storeLvalue locals lvalue register = do
     current <- getEither
     addErrorsOr (analyseLvalue (blockSyms current) locals lvalue)
                 (\sym -> storeSymbol locals sym register)
 
+-- | Store symbols in a given register 
 storeSymbol :: LocalTable -> TypedLvalue -> Register -> EitherState BlockState ()
 storeSymbol locals lval register = do
     let offset = lvalueOffset lval
@@ -715,7 +731,7 @@ storeSymbol locals lval register = do
 
         offsetReg <- compileExpr locals offset
         case offsetReg of
-            Just offsetReg -> storeContent lval offsetReg register 
+            Just offsetReg -> storeSlot lval offsetReg register 
             _ -> return ()
     where
         noOffsetOp = case lval of
@@ -727,9 +743,12 @@ storeSymbol locals lval register = do
                 addInstrs $ ozLoad ptr (lvalueLocation lval)
                          <> ozStoreIndirect ptr register
 
-storeContent :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
-storeContent lval offsetReg fromRegister = do
+-- | Store the contents of a given lvalue in a stack slot with offset 
+storeSlot :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
+storeSlot lval offsetReg fromRegister = do
+
     baseReg <- useRegister 
+    
     addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
             <> ozSubOffset baseReg baseReg offsetReg
             <> ozStoreIndirect baseReg fromRegister 
