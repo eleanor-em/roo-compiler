@@ -1,5 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-|
+Module      : RooAnalyse
+Description : Analyse the structure of given RooAst 
+
+RooAnalyse was written by The Fighting Mongooses for Programming Language 
+Implementation Assignment 3b. This file handles a majority of the semantic 
+analysis for our compiler. It type checks the given expressions and statements 
+and reports invalid errors to our running tracker of Compilation errors. 
+-}
+
 module RooAnalyse where
 
 import qualified Data.Map.Strict as Map
@@ -83,6 +93,7 @@ typecheckExpression table locals expr@(EBinOp op (LocatedExpr lPos lhs) (Located
     | op `elem` [BinLt, BinLte, BinEq, BinNeq, BinGt, BinGte]   = do
         ltype <- exprType <$> typecheckExpression table locals lhs
         rtype <- exprType <$> typecheckExpression table locals rhs
+
         if ltype == rtype then
             pure    $ TypedExpr TBool expr
         else
@@ -224,21 +235,18 @@ simplifyExpression :: Expression -> Expression
 
 --   simplify `unaryNot` expression
 simplifyExpression (EUnOp UnNot inner)
-
     = case simplifyExpression (fromLocated inner) of
         EConst (LitBool val) -> EConst (LitBool (not val))
         expr -> EUnOp UnNot (liftExpr expr)
 
 --   simplify `unaryNegation` expression
 simplifyExpression (EUnOp UnNegate inner)
-
     = case simplifyExpression (fromLocated inner) of
         EConst (LitInt val) -> EConst (LitInt (-val))
         expr -> EUnOp UnNegate (liftExpr expr)
 
 --   simplify `and` expression
 simplifyExpression (EBinOp BinAnd lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         -- As per Piazza, eliminate below short-circuiting.
             
@@ -249,7 +257,6 @@ simplifyExpression (EBinOp BinAnd lhs rhs)
 
 --   simplify `or` expression
 simplifyExpression (EBinOp BinOr lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         -- As per Piazza, eliminate below short-circuiting.
             
@@ -260,28 +267,24 @@ simplifyExpression (EBinOp BinOr lhs rhs)
 
 --   simplify `plus` expression
 simplifyExpression (EBinOp BinPlus lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs + rhs))
         (lhs, rhs) -> EBinOp BinPlus (liftExpr lhs) (liftExpr rhs)
 
 --   simplify `minus` expression
 simplifyExpression (EBinOp BinMinus lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs - rhs))
         (lhs, rhs) -> EBinOp BinMinus (liftExpr lhs) (liftExpr rhs)
 
 --   simplify `times` expression
 simplifyExpression (EBinOp BinTimes lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs * rhs))
         (lhs, rhs) -> EBinOp BinTimes (liftExpr lhs) (liftExpr rhs)
 
 --   simplify `divide` expression
 simplifyExpression (EBinOp BinDivide lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         expr@(EConst (LitInt lhs),  EConst (LitInt rhs))  -> 
             if rhs /= 0 then
@@ -292,7 +295,6 @@ simplifyExpression (EBinOp BinDivide lhs rhs)
 
 --   The only remaining cases are comparison operators
 simplifyExpression (EBinOp binop lhs rhs)
-
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs `op` rhs))
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitBool (lhs `op` rhs))
@@ -332,14 +334,12 @@ analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] Typ
 
 --   Analysing the form * <identifier> 
 analyseLvalue _ locals (LId (Ident pos name)) = do
-
     sym <- unwrapOr (Map.lookup name $ localSymbols locals)
                     (Left $ errorPos pos $ "in statement: unknown variable " <> backticks name)
     return $ symToTypedLvalue sym noOffset
 
 --   Analysing the form * <identifier> [<expression>]
 analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
-
     = case Map.lookup ident (localSymbols locals) of
         Just sym -> do
             case procSymType $ symType sym of
@@ -377,7 +377,6 @@ analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
 
 --   Analysing the form * <identifier>.<identifier>
 analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
-
     recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
                        (Left $ errorPos recPos $ "in statement: unknown variable "
                                                <> backticks recName)
@@ -414,7 +413,6 @@ analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) =
 
 --   Analysing the form * <identifier>[<expression>].<identifier>
 analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
-
     = case Map.lookup arrName (localSymbols locals) of
         Just sym -> do
             case procSymType $ symType sym of

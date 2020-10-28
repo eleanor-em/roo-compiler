@@ -1,5 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-|
+Module      : RooCompile
+Description : Generates the Oz code for a given Roo Source code  
+
+RooCompile takes an AST generated from our parser and generates 
+appropriate Oz code. It passed the ast through type checking analysis 
+from RooAnalyse and appropriate generates Oz code to handle 
+the expected functionality. 
+-}
+
 module RooCompile where
 
 import Data.Maybe (catMaybes, fromJust)
@@ -148,20 +158,17 @@ compileStatement :: LocalTable -> Statement -> EitherState BlockState ()
 
 --   Compiles a `write` statement 
 compileStatement locals st@(SWrite expr) = do
-
     commentStatement st
     compileWrite locals expr
 
 --   Compiles a `writeln` statement
 compileStatement locals st@(SWriteLn expr) = do
-
     commentStatement st
     compileWrite locals expr
     addInstrs (ozWriteString "\\n")
 
 --   Compiles an `lvalue <- expr` statement
 compileStatement locals st@(SAssign lvalue expr) = do
-
     commentStatement st
     current <- getEither
     let symbols = blockSyms current
@@ -195,7 +202,6 @@ compileStatement locals st@(SAssign lvalue expr) = do
 
 --   Compiles a `read` statement 
 compileStatement locals st@(SRead lvalue) = do
-
     commentStatement st
     current <- getEither
     let symbols = blockSyms current
@@ -217,14 +223,12 @@ compileStatement locals st@(SRead lvalue) = do
 
 --   Compiles a `call` statement 
 compileStatement locals st@(SCall ident args) = do
-
     commentStatement st
     compileCall locals ident args
     pure ()
 
 --   Compiles an `if` statement
 compileStatement locals (SIf expr statements) = do 
-
     addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
     current <- getEither
     let symbols = blockSyms current
@@ -246,7 +250,6 @@ compileStatement locals (SIf expr statements) = do
 
 --   Compiles an `if/Else` statement 
 compileStatement locals (SIfElse expr ifStatements elseStatements) = do 
-
     addInstrs $ makeComment ("if " <> prettyExpr (fromLocated expr) <> " then")
     current <- getEither
     let symbols = blockSyms current
@@ -279,7 +282,6 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
 
 --   Compiles a `while` statement
 compileStatement locals (SWhile expr statements) = do 
-
     addInstrs $ makeComment ("while " <> prettyExpr (fromLocated expr) <> " do")
     current <- getEither
     let symbols = blockSyms current
@@ -318,7 +320,6 @@ compileStatement locals (SWhile expr statements) = do
 
 --   Compiles a `return` statement
 compileStatement locals st@(SReturn expr) = do
-
     commentStatement st
     current <- getEither
     let symbols = blockSyms current
@@ -365,7 +366,6 @@ compileExpr _ (EConst lit) = Just <$> loadConst lit
 
 --   Compiles `unary` expression
 compileExpr locals (EUnOp op expr) = do
-
     eval <- compileExpr locals (fromLocated expr)
 
     case eval of
@@ -383,7 +383,6 @@ compileExpr locals (EUnOp op expr) = do
 
 --   Compiles `binaryOp` expression 
 compileExpr locals (EBinOp op lexp rexp) = do
-
     lhs <- compileExpr locals (fromLocated lexp)
     rhs <- compileExpr locals (fromLocated rexp)
 
@@ -412,7 +411,6 @@ compileExpr locals (EBinOp op lexp rexp) = do
 
 --   Compiles a `function` expression 
 compileExpr locals (EFunc func args) = do
-
     current <- getEither
     let usedRegisters = blockNextReg current - 1
 
@@ -439,7 +437,6 @@ compileExpr locals (EFunc func args) = do
 
 --   Compiles a `lambda` expression 
 compileExpr locals (ELambda _ (LocatedTypeName pos _) _ _) = do
-
     -- Allocate a lambda
     current <- getEither
     let nextLambda = blockNextLambda current
@@ -503,7 +500,6 @@ compileWrite locals expr = do
 --   Updates the state with the instructions and any errors.
 compileCall :: LocalTable -> Ident -> [LocatedExpr] -> EitherState BlockState (Maybe Register)
 compileCall locals ident args = do
-
     current <- getEither
     let symbols = blockSyms current
     let result = do
@@ -678,13 +674,11 @@ loadSymbol locals lval = do
 -- | Generate Oz code for loading int/bool constants 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do
-
     register <- useRegister
     addInstrs $ ozBoolConst register val
     return register
 
 loadConst (LitInt val) = do
-
     register <- useRegister
     addInstrs $ ozIntConst register val
     return register
@@ -694,7 +688,6 @@ loadConst _ = error "internal error: tried to load Text constant"
 -- | Load a particular stack stock with offsets 
 loadSlot :: TypedLvalue -> Register -> EitherState BlockState Register 
 loadSlot lval offsetReg = do
-
     register <- useRegister 
     baseReg <- useRegister 
 
@@ -745,7 +738,6 @@ storeSymbol locals lval register = do
 -- | Store the contents of a given lvalue in a stack slot with offset 
 storeSlot :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
 storeSlot lval offsetReg fromRegister = do
-
     baseReg <- useRegister 
     
     addInstrs $ offsetLoad baseReg (lvalueLocation lval) 

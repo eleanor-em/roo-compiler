@@ -1,5 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-|
+Module      : RooPreprocessor
+Description : Handles some pre-compilation steps  
+
+-}
+
 module RooPreprocessor where
 
 import Text.Regex
@@ -39,28 +45,23 @@ compileLambdas (Procedure _ _ _ _ statements)
 --   The state encodes the current used index.
 compileLambdasInner :: Statement -> State Int [Procedure]
 compileLambdasInner (SAssign _ rhs) 
-    
     = compileExprLambdas rhs
 
 compileLambdasInner (SCall _ args) 
-
     = concat <$> mapM compileExprLambdas args
 
 compileLambdasInner (SIf expr body) = do
-
     exprs <- compileExprLambdas expr
     inners <- concat <$> mapM compileLambdasInner body
     return $ exprs <> inners
 
 compileLambdasInner (SIfElse expr bodyIf bodyElse) = do
-
     exprs <- compileExprLambdas expr
     innersIf <- concat <$> mapM compileLambdasInner bodyIf
     innersElse <- concat <$> mapM compileLambdasInner bodyElse
     return $ exprs <> innersIf <> innersElse
 
 compileLambdasInner (SWhile expr body) = do
-
     exprs <- compileExprLambdas expr
     inners <- concat <$> mapM compileLambdasInner body
     return $ exprs <> inners
@@ -72,21 +73,17 @@ compileLambdasInner _ = pure []
 -- | Compiles a Lambda Expression 
 compileExprLambdas :: LocatedExpr -> State Int [Procedure]
 compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
-
     ls <- compileExprLambdas lhs
     rs <- compileExprLambdas rhs
     return $ ls <> rs
 
 compileExprLambdas (LocatedExpr _ (EUnOp _ inner)) 
-
     = compileExprLambdas inner
 
 compileExprLambdas (LocatedExpr _ (EFunc _ args)) 
-    
     = concat <$> mapM compileExprLambdas args
 
 compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
-    
     let (LocatedTypeName _ retTypeInner) = retType
 
     current <- get

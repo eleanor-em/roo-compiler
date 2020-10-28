@@ -1,5 +1,11 @@
 {-# LANGUAGE OverloadedStrings, GeneralizedNewtypeDeriving #-}
 
+{-|
+Module      : Common
+Description : General Use helper functions and data types  
+
+-}
+
 module Common where
 
 import Control.Monad.State
