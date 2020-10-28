@@ -245,3 +245,28 @@ enumerate = zip [0..]
 
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (x, y, z)= f x y z
+
+-----------------------------------
+-- Text processing for prettifying generated Oz code
+-----------------------------------
+
+addIndent :: Text -> Text
+addIndent "" = ""
+addIndent str
+    | T.head str == '#' = str
+    | otherwise         = "    " <> str
+
+makeComment :: Text -> [Text]
+makeComment str = ["# " <> T.replace "\n" "" str]
+
+makeProcLabel :: Text -> Text
+makeProcLabel = ("proc_" <>)
+
+makeProcTailLabel :: Text -> Text
+makeProcTailLabel name = "proc_" <> name <> "_loaded"
+
+lambdaLabel :: Int -> Text
+lambdaLabel i = "__lambda" <> tshow i
+
+vTableLabel :: Text
+vTableLabel = "__vtable"
