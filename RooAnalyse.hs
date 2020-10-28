@@ -516,6 +516,7 @@ hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
 returnsValue :: Statement -> Bool
 returnsValue (SReturn _) = True
 returnsValue (SIfElse _ bodyIf bodyElse) = any returnsValue bodyIf && any returnsValue bodyElse
+returnsValue (STailStatement st) = returnsValue st
 returnsValue _ = False
 
 -----------------------------------

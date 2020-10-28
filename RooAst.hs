@@ -115,6 +115,7 @@ data Statement
     | SIfElse LocatedExpr [Statement] [Statement]
     | SWhile LocatedExpr [Statement]
     | SReturn LocatedExpr
+    | STailStatement Statement
     deriving (Show, Eq)
 
 -- | An Expression node can be one of:

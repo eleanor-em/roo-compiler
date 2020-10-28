@@ -68,8 +68,9 @@ compileProgramFragment program = compileWithSymbols symbols errs procs
 -- | Compile the program with the given symbol table, previous errors, and procedure list.
 compileWithSymbols :: RootTable -> [AnalysisError] -> [Procedure] -> ([AnalysisError], [Text])
 compileWithSymbols symbols errs procs = do
+    let procs' = map tagProcStatements procs
     -- Compile all the procedures in our program.
-    let (errs', result) = execEither (mapM_ compileProc procs)
+    let (errs', result) = execEither (mapM_ compileProc procs')
                                      (initialBlockState symbols)
 
     let output = addHeader symbols (blockInstrs result)
@@ -226,6 +227,17 @@ compileStatement locals st@(SCall ident args) = do
     commentStatement st
     compileCall locals ident args
     pure ()
+
+--   Compiles a `call` statement that is tail recursive
+compileStatement locals st@(STailStatement (SCall ident args)) = do
+    commentStatement st
+    when (localProcName locals == fromIdent ident) setTailCall
+    compileCall locals ident args
+    unsetTailCall
+    pure ()
+
+--   Compiles any other tail recursive statement (it won't actually do anything different)
+compileStatement locals (STailStatement st) = compileStatement locals st
 
 --   Compiles an `if` statement
 compileStatement locals (SIf expr statements) = do 

@@ -163,6 +163,7 @@ prettyStatement indentLevel statement
                 , prettyAllStatements body (indentLevel + 1 )
                 , indents <> "od\n" ]
         SReturn expr -> "return " <> prettyExpr (fromLocated expr) <> endline
+        STailStatement st -> prettyStatement indentLevel st
     where
         -- Shorthand for all of the indents we currently need
         indents = allIndents indentLevel

@@ -94,6 +94,24 @@ compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
 
 compileExprLambdas _ = pure []
 
+-- | Preprocesses statements to tag the last one, for tail-call optimisation.
+tagLastStatements :: [Statement] -> [Statement]
+tagLastStatements []                = []
+
+tagLastStatements [SIf expr body]   = pure $ SIf expr (tagLastStatements body)
+
+tagLastStatements [SIfElse expr bodyIf bodyElse]
+    = pure $ SIfElse expr (tagLastStatements bodyIf) (tagLastStatements bodyElse)
+
+tagLastStatements [last]            = pure $ STailStatement last
+
+tagLastStatements (first:rest)      = first : tagLastStatements rest
+
+-- | Preprocesses the statements of a procedure as above.
+tagProcStatements :: Procedure -> Procedure
+tagProcStatements (Procedure pos header retType decls body)
+    = Procedure pos header retType decls (tagLastStatements body)
+
 -----------------------------------
 -- VTable Implementation 
 -----------------------------------
@@ -127,6 +145,4 @@ generateVtable table = mconcat
                     [ [ label <> ":" ]
                     , map addIndent (ozCall (makeProcLabel procName))
                     , [ addIndent "return" ] ]
-
-
 
