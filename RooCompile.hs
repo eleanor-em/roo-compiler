@@ -231,7 +231,7 @@ compileStatement locals (SIf expr statements) = do
     let symbols = blockSyms current
     fiLabel <- getLabel 
 
-    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
+    addErrorsOr (typecheckCondition symbols locals expr) $ \expr' -> do 
 
         -- report trivial cases for conditional expressions
         checkConditionState "if" expr
@@ -254,7 +254,7 @@ compileStatement locals (SIfElse expr ifStatements elseStatements) = do
     elseLabel <- getLabel 
     afterLabel <- getLabel
 
-    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
+    addErrorsOr (typecheckCondition symbols locals expr) $ \expr' -> do 
 
         -- report trivial cases for conditional expressions
         checkConditionState "if" expr
@@ -287,7 +287,7 @@ compileStatement locals (SWhile expr statements) = do
     beginLabel <- getLabel
     falseLabel <- getLabel 
 
-    addErrorsOr (typeCheckCondition symbols locals expr) $ \expr' -> do 
+    addErrorsOr (typecheckCondition symbols locals expr) $ \expr' -> do 
         
         -- report trivial cases for conditional expressions
         checkConditionState "while" expr

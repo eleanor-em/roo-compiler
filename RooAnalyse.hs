@@ -14,12 +14,6 @@ import RooPrettyPrinter (prettyBinOp)
 import SymTable
 import Control.Monad (unless)
 
--- | Checks if the symbol table contains an appropriate main procedure.
-hasMain :: RootTable -> Bool
-hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
-    Just (_, prc) -> null (localParams prc)
-    Nothing       -> False
-
 -----------------------------------
 -- Expression Analysis 
 -----------------------------------
@@ -155,11 +149,9 @@ typecheckExpression table _ expr@(ELambda params (LocatedTypeName _ retType) _ _
             _                    -> TVoid
     return $ TypedExpr (TFunc paramTys retType') expr
 
--- | Returns True if the statement *always* returns a value.
-returnsValue :: Statement -> Bool
-returnsValue (SReturn _) = True
-returnsValue (SIfElse _ bodyIf bodyElse) = any returnsValue bodyIf && any returnsValue bodyElse
-returnsValue _ = False
+-----------------------------------
+-- Type Checking Helper Functions
+-----------------------------------
 
 -- | Typechecks a call expression to ensure the func/proc exists with well-formed arguments 
 typecheckCall :: RootTable -> LocalTable -> Ident -> [LocatedExpr]
@@ -211,22 +203,42 @@ typecheckCall table locals (Ident pos name) args = do
         checkRefArgs _ (RefSymbol _) = False
         checkRefArgs _ _ = True
 
+-- | Type checks a condition to ensure its always bool 
+typecheckCondition :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] Expression 
+typecheckCondition symbols locals expr = do 
+    TypedExpr ty expr' <- analyseExpression symbols locals expr
+
+    -- condition expression is incorrectly typed 
+    if ty /= TBool then 
+        Left $ errorPos (locate expr)
+                        ("expecting `boolean`, found " <> backticks ty)
+    else
+        return expr'
+
 -----------------------------------
 -- Expression Optimisation 
 -----------------------------------
+
 -- | Simplify a given expression by recursively evaluating expressions as much as possible
 simplifyExpression :: Expression -> Expression
+
+--   simplify `unaryNot` expression
 simplifyExpression (EUnOp UnNot inner)
+
     = case simplifyExpression (fromLocated inner) of
         EConst (LitBool val) -> EConst (LitBool (not val))
         expr -> EUnOp UnNot (liftExpr expr)
 
+--   simplify `unaryNegation` expression
 simplifyExpression (EUnOp UnNegate inner)
+
     = case simplifyExpression (fromLocated inner) of
         EConst (LitInt val) -> EConst (LitInt (-val))
         expr -> EUnOp UnNegate (liftExpr expr)
 
+--   simplify `and` expression
 simplifyExpression (EBinOp BinAnd lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         -- As per Piazza, eliminate below short-circuiting.
             
@@ -235,7 +247,9 @@ simplifyExpression (EBinOp BinAnd lhs rhs)
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs && rhs))
         (lhs, rhs) -> EBinOp BinAnd (liftExpr lhs) (liftExpr rhs)
 
+--   simplify `or` expression
 simplifyExpression (EBinOp BinOr lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         -- As per Piazza, eliminate below short-circuiting.
             
@@ -244,22 +258,30 @@ simplifyExpression (EBinOp BinOr lhs rhs)
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs || rhs))
         (lhs, rhs) -> EBinOp BinOr (liftExpr lhs) (liftExpr rhs)
 
+--   simplify `plus` expression
 simplifyExpression (EBinOp BinPlus lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs + rhs))
         (lhs, rhs) -> EBinOp BinPlus (liftExpr lhs) (liftExpr rhs)
 
+--   simplify `minus` expression
 simplifyExpression (EBinOp BinMinus lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs - rhs))
         (lhs, rhs) -> EBinOp BinMinus (liftExpr lhs) (liftExpr rhs)
 
+--   simplify `times` expression
 simplifyExpression (EBinOp BinTimes lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitInt (lhs * rhs))
         (lhs, rhs) -> EBinOp BinTimes (liftExpr lhs) (liftExpr rhs)
 
+--   simplify `divide` expression
 simplifyExpression (EBinOp BinDivide lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         expr@(EConst (LitInt lhs),  EConst (LitInt rhs))  -> 
             if rhs /= 0 then
@@ -268,8 +290,9 @@ simplifyExpression (EBinOp BinDivide lhs rhs)
                 uncurry (EBinOp BinDivide) (mapPair liftExpr expr)
         (lhs, rhs) -> EBinOp BinDivide (liftExpr lhs) (liftExpr rhs)
 
--- The only remaining cases are comparison operators
+--   The only remaining cases are comparison operators
 simplifyExpression (EBinOp binop lhs rhs)
+
     = case (simplifyExpression (fromLocated lhs), simplifyExpression (fromLocated rhs)) of
         (EConst (LitBool lhs), EConst (LitBool rhs)) -> EConst (LitBool (lhs `op` rhs))
         (EConst (LitInt lhs),  EConst (LitInt rhs))  -> EConst (LitBool (lhs `op` rhs))
@@ -283,6 +306,7 @@ simplifyExpression (EBinOp binop lhs rhs)
             BinNeq -> a /= b
             _      -> a == b -- this will only match BinEq
 
+--   No simplication can be done 
 simplifyExpression expr = expr
 
 -----------------------------------
@@ -302,6 +326,146 @@ data TypedLvalue = TypedRefLvalue Type StackSlot Expression Text SourcePos
 -- | Visualising lvalue types
 instance Show TypedLvalue where
     show lval = show (lvalueName lval) <> " (" <> show (lvalueType lval) <> ")"
+
+-- | Analyse a given Lvalue expression and identify if it is semantically valid 
+analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
+
+--   Analysing the form * <identifier> 
+analyseLvalue _ locals (LId (Ident pos name)) = do
+
+    sym <- unwrapOr (Map.lookup name $ localSymbols locals)
+                    (Left $ errorPos pos $ "in statement: unknown variable " <> backticks name)
+    return $ symToTypedLvalue sym noOffset
+
+--   Analysing the form * <identifier> [<expression>]
+analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
+
+    = case Map.lookup ident (localSymbols locals) of
+        Just sym -> do
+            case procSymType $ symType sym of
+                
+                -- Make sure the lvalue is an array 
+                TArray _ _ ty -> do
+
+                    typecheckArrayIndex table locals indexExpr
+                    let pos = locate indexExpr
+
+                    -- Identify the evaluated `index` 
+                    index <- 
+                        if sizeof ty /= 1 then
+                            return $ EBinOp BinTimes
+                                        (LocatedExpr pos (EConst (LitInt (sizeof ty))))
+                                        indexExpr
+                        else
+                            return $ simplifyExpression (fromLocated indexExpr)
+
+                    -- Create TypedLvalue that tracks info about the array expression
+                    return $ symToTypedLvalue
+                        (ProcSymbol (cons sym ty) (symLocation sym) pos (ident <> "[]"))
+                        index
+
+                TNever -> Left []
+
+                ty -> Left $ errorPos pos $ "expected array type, found " <> backticks ty
+
+        Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable " <> backticks ident
+
+    where
+        cons ty = case symType ty of
+            ValSymbol _ -> ValSymbol
+            RefSymbol _ -> RefSymbol
+
+--   Analysing the form * <identifier>.<identifier>
+analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
+
+    recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
+                       (Left $ errorPos recPos $ "in statement: unknown variable "
+                                               <> backticks recName)
+
+    let ty = rawSymType recSym
+
+    case ty of
+
+        -- Make sure we're dealing with a record type for member access 
+        TRecord _ fieldMap -> do
+            
+            -- get the symbol of the field member in record 
+            fieldSym <- unwrapOr (Map.lookup fldName fieldMap)
+                                 (Left $ errorWithNote
+                                    fldPos ("in statement: unknown field " <> backticks recName)
+                                    (symPos recSym) "record declared here:")
+
+            -- If the record is of value kind, we can compute the offset statically.
+            -- Otherwise, we must compute it dynamically.
+            let (location, offset) = if isValSymbol recSym then
+                    (symLocation recSym + fieldOffset fieldSym, noOffset)
+                else
+                    (symLocation recSym, (EConst . LitInt . stackSlotToInt . fieldOffset) fieldSym)
+
+            cons <- case symType recSym of
+                RefSymbol _ -> return TypedRefLvalue
+                ValSymbol _ -> return TypedValLvalue
+
+            return $ cons (fieldTy fieldSym) location offset (recName <> "." <> fldName) fldPos
+
+        TNever -> Left []
+
+        _ -> Left $ errorPos recPos $ "expected variable of record type, found " <> backticks ty
+
+--   Analysing the form * <identifier>[<expression>].<identifier>
+analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
+
+    = case Map.lookup arrName (localSymbols locals) of
+        Just sym -> do
+            case procSymType $ symType sym of
+
+                -- Make sure we're dealing with an array of records 
+                TArray _ _ ty@(TRecord _ fields) -> do
+
+                    typecheckArrayIndex symbols locals indexExpr
+
+                    case Map.lookup fldName fields of
+
+                        -- Make sure we're trying to access a field member 
+                        Just (Field _ offset innerTy) -> do
+
+                            let pos = locate indexExpr
+
+                            -- Identify the evaluated `index` 
+                            index <- 
+                                if sizeof ty /= 1 then
+                                    return $ EBinOp BinTimes
+                                                (LocatedExpr pos (EConst (LitInt (sizeof ty))))
+                                                indexExpr
+                                else
+                                    return $ simplifyExpression (fromLocated indexExpr)
+                            
+                            -- Create TypedLvalue that tracks info about the array expression
+                            return $ symToTypedLvalue
+                                (ProcSymbol (cons sym innerTy)
+                                            (symLocation sym)
+                                            pos
+                                            (arrName <> "[]" <> fldName))
+                                (EBinOp BinPlus
+                                        (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
+                                        (LocatedExpr pos index))
+                                        
+                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name "
+                                                   <> backticks fldName
+
+                TNever -> Left []
+
+                ty -> Left $ errorPos arrPos $ "expected array of records, found " <> backticks ty
+        Nothing  -> Left $ errorPos arrPos $ "in array record expression: unknown variable "
+                                          <> backticks arrName
+    where
+        cons ty = case symType ty of
+            ValSymbol _ -> ValSymbol
+            RefSymbol _ -> RefSymbol
+
+-----------------------------------
+-- Lvalue Analysis Helper Functions 
+-----------------------------------
 
 -- Extracting the type from our TypedLvalue
 lvalueType :: TypedLvalue -> Type
@@ -340,107 +504,21 @@ symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
 noOffset :: Expression
 noOffset = EConst (LitInt 0)
 
--- | Analyse a given Lvalue expression and identify if it is semantically valid 
-analyseLvalue :: RootTable -> LocalTable -> Lvalue -> Either [AnalysisError] TypedLvalue
-analyseLvalue _ locals (LId (Ident pos name)) = do
-    sym <- unwrapOr (Map.lookup name $ localSymbols locals)
-                    (Left $ errorPos pos $ "in statement: unknown variable " <> backticks name)
-    return $ symToTypedLvalue sym noOffset
+-----------------------------------
+-- Validation Functions
+-----------------------------------
 
-analyseLvalue table locals (LArray (Ident pos ident) indexExpr)
-    = case Map.lookup ident (localSymbols locals) of
-        Just sym -> do
-            case procSymType $ symType sym of
-                TArray _ _ ty -> do
-                    typecheckArrayIndex table locals indexExpr
+-- | Checks if the symbol table contains an appropriate main procedure.
+hasMain :: RootTable -> Bool
+hasMain symbols = case Map.lookup "main" (rootProcs symbols) of
+    Just (_, prc) -> null (localParams prc)
+    Nothing       -> False
 
-                    let pos = locate indexExpr
-                    index <- if sizeof ty /= 1 then
-                        return $ EBinOp BinTimes
-                                        (LocatedExpr pos (EConst (LitInt (sizeof ty))))
-                                        indexExpr
-                    else
-                        return $ simplifyExpression (fromLocated indexExpr)
-
-                    return $ symToTypedLvalue
-                        (ProcSymbol (cons sym ty) (symLocation sym) pos (ident <> "[]"))
-                        index
-
-                TNever -> Left []
-
-                ty -> Left $ errorPos pos $ "expected array type, found " <> backticks ty
-        Nothing  -> Left $ errorPos pos $ "in array expression: unknown variable " <> backticks ident
-    where
-        cons ty = case symType ty of
-            ValSymbol _ -> ValSymbol
-            RefSymbol _ -> RefSymbol
-
-analyseLvalue _ locals (LMember (Ident recPos recName) (Ident fldPos fldName)) = do
-    recSym <- unwrapOr (Map.lookup recName $ localSymbols locals)
-                       (Left $ errorPos recPos $ "in statement: unknown variable "
-                                               <> backticks recName)
-
-    let ty = rawSymType recSym
-
-    case ty of
-        TRecord _ fieldMap -> do
-            fieldSym <- unwrapOr (Map.lookup fldName fieldMap)
-                                 (Left $ errorWithNote
-                                    fldPos ("in statement: unknown field " <> backticks recName)
-                                    (symPos recSym) "record declared here:")
-            -- If the record is of value kind, we can compute the offset statically.
-            -- Otherwise, we must compute it dynamically.
-            let (location, offset) = if isValSymbol recSym then
-                    (symLocation recSym + fieldOffset fieldSym, noOffset)
-                else
-                    (symLocation recSym, (EConst . LitInt . stackSlotToInt . fieldOffset) fieldSym)
-
-            cons <- case symType recSym of
-                RefSymbol _ -> return TypedRefLvalue
-                ValSymbol _ -> return TypedValLvalue
-
-            return $ cons (fieldTy fieldSym) location offset (recName <> "." <> fldName) fldPos
-
-        TNever -> Left []
-
-        _ -> Left $ errorPos recPos $ "expected variable of record type, found " <> backticks ty
-
-analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ident fldPos fldName)) 
-    = case Map.lookup arrName (localSymbols locals) of
-        Just sym -> do
-            case procSymType $ symType sym of
-                TArray _ _ ty@(TRecord _ fields) -> do
-                    typecheckArrayIndex symbols locals indexExpr
-                    case Map.lookup fldName fields of
-                        Just (Field _ offset innerTy) -> do
-                            let pos = locate indexExpr
-                            index <- if sizeof ty /= 1 then
-                                return $ EBinOp BinTimes
-                                                (LocatedExpr pos (EConst (LitInt (sizeof ty))))
-                                                indexExpr
-                            else
-                                return $ simplifyExpression (fromLocated indexExpr)
-
-                            return $ symToTypedLvalue
-                                (ProcSymbol (cons sym innerTy)
-                                            (symLocation sym)
-                                            pos
-                                            (arrName <> "[]" <> fldName))
-                                (EBinOp BinPlus
-                                        (LocatedExpr pos ((EConst . LitInt . stackSlotToInt) offset))
-                                        (LocatedExpr pos index))
-                        _ -> Left $ errorPos fldPos $ "in expression: unknown field name "
-                                                   <> backticks fldName
-
-                TNever -> Left []
-
-                ty -> Left $ errorPos arrPos $ "expected array of records, found " <> backticks ty
-        Nothing  -> Left $ errorPos arrPos $ "in array record expression: unknown variable "
-                                          <> backticks arrName
-    where
-        cons ty = case symType ty of
-            ValSymbol _ -> ValSymbol
-            RefSymbol _ -> RefSymbol
+-- | Returns True if the statement *always* returns a value.
+returnsValue :: Statement -> Bool
+returnsValue (SReturn _) = True
+returnsValue (SIfElse _ bodyIf bodyElse) = any returnsValue bodyIf && any returnsValue bodyElse
+returnsValue _ = False
 
 -----------------------------------
 -- While Loop Analysis 
@@ -474,13 +552,3 @@ modifiesLvalue lval (SWhile _ body)
 
 modifiesLvalue _ _ = False
 
-typeCheckCondition :: RootTable -> LocalTable -> LocatedExpr -> Either [AnalysisError] Expression 
-typeCheckCondition symbols locals expr = do 
-    TypedExpr ty expr' <- analyseExpression symbols locals expr
-
-    -- condition expression is incorrectly typed 
-    if ty /= TBool then 
-        Left $ errorPos (locate expr)
-                        ("expecting `boolean`, found " <> backticks ty)
-    else
-        return expr'

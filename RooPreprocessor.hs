@@ -11,6 +11,10 @@ import SymTable (RootTable, localProcName, rootVtable)
 import Data.Text (Text)
 import Oz 
 
+-----------------------------------
+-- Managing @Includes 
+-----------------------------------
+
 includeMatcher :: Regex
 includeMatcher = mkRegexWithOpts "^@include *\"(.+)\" *$" True True
 
@@ -19,6 +23,10 @@ extractIncludes = matchRegex includeMatcher
 
 removeIncludes :: String -> String
 removeIncludes str = subRegex includeMatcher str ""
+
+-----------------------------------
+-- Compiling Lambda Expressions
+-----------------------------------
 
 -- | Searches a procedure for any lambda functions, turning them into procedure definitions.
 compileLambdas :: Procedure -> State Int [Procedure]
@@ -30,43 +38,55 @@ compileLambdas (Procedure _ _ _ _ statements)
 -- | Search the statement for any lambda functions, and turn them into procedure definitions.
 --   The state encodes the current used index.
 compileLambdasInner :: Statement -> State Int [Procedure]
-compileLambdasInner statement
-    = case statement of
-        SAssign _ rhs -> compileExprLambdas rhs
+compileLambdasInner (SAssign _ rhs) 
+    
+    = compileExprLambdas rhs
 
-        SCall _ args  -> concat <$> mapM compileExprLambdas args
+compileLambdasInner (SCall _ args) 
 
-        SIf expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
+    = concat <$> mapM compileExprLambdas args
 
-        SIfElse expr bodyIf bodyElse -> do
-            exprs <- compileExprLambdas expr
-            innersIf <- concat <$> mapM compileLambdasInner bodyIf
-            innersElse <- concat <$> mapM compileLambdasInner bodyElse
-            return $ exprs <> innersIf <> innersElse
+compileLambdasInner (SIf expr body) = do
 
-        SWhile expr body -> do
-            exprs <- compileExprLambdas expr
-            inners <- concat <$> mapM compileLambdasInner body
-            return $ exprs <> inners
+    exprs <- compileExprLambdas expr
+    inners <- concat <$> mapM compileLambdasInner body
+    return $ exprs <> inners
 
-        SReturn expr -> compileExprLambdas expr
+compileLambdasInner (SIfElse expr bodyIf bodyElse) = do
 
-        _ -> pure []
+    exprs <- compileExprLambdas expr
+    innersIf <- concat <$> mapM compileLambdasInner bodyIf
+    innersElse <- concat <$> mapM compileLambdasInner bodyElse
+    return $ exprs <> innersIf <> innersElse
+
+compileLambdasInner (SWhile expr body) = do
+
+    exprs <- compileExprLambdas expr
+    inners <- concat <$> mapM compileLambdasInner body
+    return $ exprs <> inners
+
+compileLambdasInner (SReturn expr) = compileExprLambdas expr
+
+compileLambdasInner _ = pure []
 
 -- | Compiles a Lambda Expression 
 compileExprLambdas :: LocatedExpr -> State Int [Procedure]
 compileExprLambdas (LocatedExpr _ (EBinOp _ lhs rhs)) = do
+
     ls <- compileExprLambdas lhs
     rs <- compileExprLambdas rhs
     return $ ls <> rs
-compileExprLambdas (LocatedExpr _ (EUnOp _ inner))
+
+compileExprLambdas (LocatedExpr _ (EUnOp _ inner)) 
+
     = compileExprLambdas inner
-compileExprLambdas (LocatedExpr _ (EFunc _ args))
+
+compileExprLambdas (LocatedExpr _ (EFunc _ args)) 
+    
     = concat <$> mapM compileExprLambdas args
+
 compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
+    
     let (LocatedTypeName _ retTypeInner) = retType
 
     current <- get
@@ -75,14 +95,18 @@ compileExprLambdas (LocatedExpr pos (ELambda params retType varDecls body)) = do
 
     return $ pure $ Procedure pos header retTypeInner varDecls body
 
-
 compileExprLambdas _ = pure []
+
+-----------------------------------
+-- VTable Implementation 
+-----------------------------------
 
 -- | Generates the vtable instructions for the given symbol table. This works by assigning an index
 --   to every procedure, and performing a linear scan on a dedicated register to search for the
 --   appropriate procedure.
 generateVtable :: RootTable -> [Text]
 generateVtable table = mconcat
+
     [ [ vTableLabel <> ":" ]
     , mconcat branches
     , map addIndent (ozBranch "__vtable_end")
@@ -97,6 +121,7 @@ generateVtable table = mconcat
     where
         (branches, labels) = unzip $ map extractVtableData (Map.toAscList (rootVtable table))
         extractVtableData (index, (_, locals)) = (branch, target)
+        
             where
                 procName = localProcName locals
                 label  = "__vptr_" <> procName
