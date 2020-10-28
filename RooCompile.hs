@@ -548,7 +548,42 @@ compileCall locals ident args = do
             = compileExpr locals (simplifyExpression expr)
 
 -----------------------------------
--- Compiling Lvalues 
+-- Compile Statements Helper Functions 
+-----------------------------------
+
+copyContents :: LocalTable -> TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
+copyContents locals lval rval size = do
+    -- Calculate the offsets here and then pass through the offsetReg with our own register 
+    offsetReg' <- compileExpr locals (lvalueOffset lval)
+    offsetReg'' <- compileExpr locals (lvalueOffset rval)
+    case (offsetReg', offsetReg'') of 
+        (Just offsetReg', Just offsetReg'') -> copyContentsRec lval rval offsetReg' offsetReg'' size 
+        _ ->  pure $ ()
+    
+copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Register -> Int -> EitherState BlockState ()
+copyContentsRec _ _ _ _ 0 = pure $ ()
+copyContentsRec lval rval lOffset rOffset slotsRemaining = do 
+
+    -- load address from rval into a register 
+    fromRegister <- loadSlot rval rOffset 
+    
+    -- using the address from before, store content into our lval 
+    storeContent lval lOffset fromRegister
+    incrReg <- loadConst (LitInt 1) 
+    addInstrs $ ozPlus rOffset rOffset incrReg 
+    addInstrs $ ozPlus lOffset lOffset incrReg
+    copyContentsRec lval rval lOffset rOffset (slotsRemaining - 1)
+
+checkConditionState :: Text -> LocatedExpr -> EitherState BlockState ()
+checkConditionState st expr = do 
+    case simplifyExpression (fromLocated expr) of
+        EConst (LitBool val) -> addErrors $
+            warnPos (locate expr)
+                    ("`" <> st <> "`" <> " condition is always " <> tshowBool val)
+        _ -> pure ()
+
+-----------------------------------
+-- Generating Loading Lvalues in Oz
 -----------------------------------
 
 loadLvalue :: LocalTable -> Lvalue -> EitherState BlockState (Maybe Register)
@@ -607,7 +642,7 @@ loadAddress locals lvalue = do
 loadSymbol :: LocalTable -> TypedLvalue -> EitherState BlockState (Maybe Register)
 loadSymbol locals lval = do
     let offset = lvalueOffset lval
-    let location = lvalueLocation lval
+    -- let location = lvalueLocation lval
 
     if noOffset == offset then do
         register <- useRegister
@@ -615,15 +650,12 @@ loadSymbol locals lval = do
         return $ Just register
     else do
         -- Compute a reference offset
-        register <- useRegister
-        baseReg <- useRegister
         offsetReg <- compileExpr locals offset
         case offsetReg of
             Just offsetReg -> do
-                addInstrs $ offsetLoad baseReg location
-                         <> ozSubOffset baseReg baseReg offsetReg
-                         <> ozLoadIndirect register baseReg
+                register <- loadSlot lval offsetReg 
                 return $ Just register
+
             _ -> return Nothing
     where
         noOffsetOp register = case lval of
@@ -634,10 +666,6 @@ loadSymbol locals lval = do
                 ptr <- useRegister
                 addInstrs $ ozLoad ptr (lvalueLocation lval)
                          <> ozLoadIndirect register ptr
-        
-        offsetLoad = case lval of
-            TypedValLvalue {} -> ozLoadAddress
-            TypedRefLvalue {} -> ozLoad
 
 loadConst :: Literal -> EitherState BlockState Register
 loadConst (LitBool val) = do
@@ -667,40 +695,9 @@ loadSlot lval offsetReg = do
             TypedValLvalue {} -> ozLoadAddress 
             TypedRefLvalue {} -> ozLoad
 
-storeContent :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
-storeContent lval offsetReg fromRegister = do
-    baseReg <- useRegister 
-    addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
-            <> ozSubOffset baseReg baseReg offsetReg
-            <> ozStoreIndirect baseReg fromRegister 
-
-    where 
-        offsetLoad = case lval of 
-            TypedValLvalue {} -> ozLoadAddress 
-            TypedRefLvalue {} -> ozLoad
-
-copyContents :: LocalTable -> TypedLvalue -> TypedLvalue -> Int -> EitherState BlockState () 
-copyContents locals lval rval size = do
-    -- Calculate the offsets here and then pass through the offsetReg with our own register 
-    offsetReg' <- compileExpr locals (lvalueOffset lval)
-    offsetReg'' <- compileExpr locals (lvalueOffset rval)
-    case (offsetReg', offsetReg'') of 
-        (Just offsetReg', Just offsetReg'') -> copyContentsRec lval rval offsetReg' offsetReg'' size 
-        _ ->  pure $ ()
-    
-copyContentsRec :: TypedLvalue -> TypedLvalue -> Register -> Register -> Int -> EitherState BlockState ()
-copyContentsRec _ _ _ _ 0 = pure $ ()
-copyContentsRec lval rval lOffset rOffset slotsRemaining = do 
-
-    -- load address from rval into a register 
-    fromRegister <- loadSlot rval rOffset 
-    
-    -- using the address from before, store content into our lval 
-    storeContent lval lOffset fromRegister
-    incrReg <- loadConst (LitInt 1) 
-    addInstrs $ ozPlus rOffset rOffset incrReg 
-    addInstrs $ ozPlus lOffset lOffset incrReg
-    copyContentsRec lval rval lOffset rOffset (slotsRemaining - 1)
+-----------------------------------
+-- Generating Storing Lvalues in Oz
+-----------------------------------
     
 storeLvalue :: LocalTable -> Lvalue -> Register -> EitherState BlockState ()
 storeLvalue locals lvalue register = do
@@ -715,12 +712,10 @@ storeSymbol locals lval register = do
     if noOffset == offset then
         noOffsetOp
     else do
-        baseReg <- useRegister
+
         offsetReg <- compileExpr locals offset
         case offsetReg of
-            Just offsetReg -> addInstrs $ offsetLoad baseReg (lvalueLocation lval)
-                                       <> ozSubOffset baseReg baseReg offsetReg
-                                       <> ozStoreIndirect baseReg register
+            Just offsetReg -> storeContent lval offsetReg register 
             _ -> return ()
     where
         noOffsetOp = case lval of
@@ -731,12 +726,18 @@ storeSymbol locals lval register = do
                 ptr <- useRegister
                 addInstrs $ ozLoad ptr (lvalueLocation lval)
                          <> ozStoreIndirect ptr register
-        
-        offsetLoad = case lval of
-            TypedValLvalue {} -> ozLoadAddress
+
+storeContent :: TypedLvalue -> Register -> Register -> EitherState BlockState ()
+storeContent lval offsetReg fromRegister = do
+    baseReg <- useRegister 
+    addInstrs $ offsetLoad baseReg (lvalueLocation lval) 
+            <> ozSubOffset baseReg baseReg offsetReg
+            <> ozStoreIndirect baseReg fromRegister 
+
+    where 
+        offsetLoad = case lval of 
+            TypedValLvalue {} -> ozLoadAddress 
             TypedRefLvalue {} -> ozLoad
-
-
 -----------------------------------
 -- Register Management
 -----------------------------------
@@ -823,14 +824,4 @@ getLabel = do
     putEither (current { nextLabel = currentLabel + 1})
     return $ "label_" <> (tshow currentLabel)
 
------------------------------------
--- General Helper Functions 
------------------------------------
 
-checkConditionState :: Text -> LocatedExpr -> EitherState BlockState ()
-checkConditionState st expr = do 
-    case simplifyExpression (fromLocated expr) of
-        EConst (LitBool val) -> addErrors $
-            warnPos (locate expr)
-                    ("`" <> st <> "`" <> " condition is always " <> tshowBool val)
-        _ -> pure ()
