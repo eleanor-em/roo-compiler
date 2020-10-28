@@ -109,8 +109,8 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
                 "control may reach the end of the procedure without returning a value")
 
             let stackSize = localStackSize locals
-            let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
-            let epilogue = if stackSize > 0 then ozPopStackFrame  stackSize else [] <> ["return"]
+            let prologue =  if stackSize > 0 then ozPushStackFrame stackSize else []
+            let epilogue = (if stackSize > 0 then ozPopStackFrame  stackSize else []) <> ["return"]
 
             putEither (current { blockEpilogue = epilogue })
             -- Load arguments
