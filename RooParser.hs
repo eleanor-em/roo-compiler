@@ -93,10 +93,10 @@ pKeyword []  = pure ()
 pKeyword [c] = lexeme (char c)
             $> ()
 
-pKeyword str = lexeme (char begin)
+pKeyword str = try (lexeme (char begin)
             *> mapM_ char middle
             *> lexeme (char end)
-            $> ()
+            $> ())
     where
         begin  = head          str
         middle = (init . tail) str

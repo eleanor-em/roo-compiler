@@ -10,6 +10,6 @@ procedure main ()
     od
 
     call map(lambda (integer val x) -> integer { return x * x; }, arr, arr);
-    call for_each(lambda (integer val x) -> { write x; write " "; }, arr);
+    call for_each(lambda (integer val x) { write x; write " "; }, arr);
     writeln "";
 }
