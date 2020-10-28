@@ -4,7 +4,7 @@ module Oz where
 
 import Data.Text (Text)
 
-import Common
+import Common ( tshow, Register(..), StackSlot )
 
 ozReturnRegister :: Register
 ozReturnRegister = Register 0

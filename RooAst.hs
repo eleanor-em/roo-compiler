@@ -104,6 +104,7 @@ data TypeName = PrimitiveTypeName PrimitiveType
 --     * an if statement
 --     * an ifelse statement
 --     * a while statement 
+--     * a return statement
 data Statement 
     = SAssign Lvalue LocatedExpr
     | SRead Lvalue
@@ -121,6 +122,8 @@ data Statement
 --     * literal
 --     * expression <binary operator> expression
 --     * <unary operator> expression 
+--     * a function call
+--     * a lambda expression
 data Expression
     = ELvalue Lvalue
     | EConst Literal
@@ -176,30 +179,6 @@ data Lvalue
 data Ident = Ident SourcePos Text
     deriving Eq
 
------------------------------------
--- AST Helper Functions 
------------------------------------
-
-getTypePos :: LocatedTypeName -> SourcePos
-getTypePos (LocatedTypeName pos _) = pos
-
-liftExpr :: Expression -> LocatedExpr
-liftExpr = LocatedExpr (initialPos "")
-
-locateLvalue :: Lvalue -> SourcePos
-locateLvalue (LId (Ident pos _)) = pos
-locateLvalue (LMember (Ident pos _) _) = pos
-locateLvalue (LArray (Ident pos _) _) = pos
-locateLvalue (LArrayMember (Ident pos _) _ _) = pos
-
--- | Used to determine if lvalues are modified in a while body.
-nameLvalue :: Lvalue -> Text
-nameLvalue (LId (Ident _ name)) = name
-nameLvalue (LMember (Ident _ record) (Ident _ field)) = record <> "." <> field
--- Don't waste time dynamically checking the array index
-nameLvalue (LArray (Ident _ array) _) = array <> "[]"
-nameLvalue (LArrayMember (Ident _ array) _ (Ident _ field)) = array <> "[]." <> field
-
 instance Show Ident where
     show (Ident pos ident) = concat
         [ show ident
@@ -207,6 +186,30 @@ instance Show Ident where
         , show $ sourceLine pos
         , ":"
         , show $ sourceColumn pos ]
+
+-----------------------------------
+-- AST Helper Functions 
+-----------------------------------
+
+-- | Lifts an expression to a located one using a bogus position (for simplifying analysis).
+liftExpr :: Expression -> LocatedExpr
+liftExpr = LocatedExpr (initialPos "")
+
+-- | Returns the position of an lvalue.
+locateLvalue :: Lvalue -> SourcePos
+locateLvalue (LId (Ident pos _)) = pos
+locateLvalue (LMember (Ident pos _) _) = pos
+locateLvalue (LArray (Ident pos _) _) = pos
+locateLvalue (LArrayMember (Ident pos _) _ _) = pos
+
+-- | Get the name of an lvalue.
+--   Used to determine if lvalues are modified in a while body.
+nameLvalue :: Lvalue -> Text
+nameLvalue (LId (Ident _ name)) = name
+nameLvalue (LMember (Ident _ record) (Ident _ field)) = record <> "." <> field
+-- Don't waste time dynamically checking the array index
+nameLvalue (LArray (Ident _ array) _) = array <> "[]"
+nameLvalue (LArrayMember (Ident _ array) _ (Ident _ field)) = array <> "[]." <> field
 
 -- | Extract the name of an identifier.
 fromIdent :: Ident -> Text

@@ -467,32 +467,32 @@ analyseLvalue symbols locals (LArrayMember (Ident arrPos arrName) indexExpr (Ide
 -- Lvalue Analysis Helper Functions 
 -----------------------------------
 
--- Extracting the type from our TypedLvalue
+-- | Extracting the type from our TypedLvalue
 lvalueType :: TypedLvalue -> Type
 lvalueType (TypedRefLvalue ty _ _ _ _) = ty
 lvalueType (TypedValLvalue ty _ _ _ _) = ty
 
--- Extracting the root stack slot location from our TypedLvalue
+-- | Extracting the root stack slot location from our TypedLvalue
 lvalueLocation :: TypedLvalue -> StackSlot
 lvalueLocation (TypedRefLvalue _ loc _ _ _) = loc
 lvalueLocation (TypedValLvalue _ loc _ _ _) = loc
 
--- Extracting the expression offset from our TypedLvalue
+-- | Extracting the expression offset from our TypedLvalue
 lvalueOffset :: TypedLvalue -> Expression
 lvalueOffset (TypedRefLvalue _ _ off _ _) = off
 lvalueOffset (TypedValLvalue _ _ off _ _) = off
 
--- Extracting the name from our TypedLvalue
+-- | Extracting the name from our TypedLvalue
 lvalueName :: TypedLvalue -> Text
 lvalueName (TypedRefLvalue _ _ _ name _) = name
 lvalueName (TypedValLvalue _ _ _ name _) = name
 
--- Extracting the Source position from out TypedLvalue
+-- | Extracting the Source position from out TypedLvalue
 lvaluePos :: TypedLvalue -> SourcePos
 lvaluePos (TypedRefLvalue _ _ _ _ pos) = pos
 lvaluePos (TypedValLvalue _ _ _ _ pos) = pos
 
--- Converting a ProcSymbol into a TypedLvalue by attaching its `mode` to an Lvalue Expression
+-- | Converting a ProcSymbol into a TypedLvalue by attaching its `mode` to an Lvalue Expression
 symToTypedLvalue :: ProcSymbol -> Expression -> TypedLvalue
 symToTypedLvalue (ProcSymbol (RefSymbol ty) slot pos name) offset
     = TypedRefLvalue ty slot offset name pos
@@ -500,7 +500,7 @@ symToTypedLvalue (ProcSymbol (RefSymbol ty) slot pos name) offset
 symToTypedLvalue (ProcSymbol (ValSymbol ty) slot pos name) offset
     = TypedValLvalue ty slot offset name pos
 
--- An expression representation for there being no offset 
+-- | An expression representation for there being no offset 
 noOffset :: Expression
 noOffset = EConst (LitInt 0)
 
@@ -524,13 +524,14 @@ returnsValue _ = False
 -- While Loop Analysis 
 -----------------------------------
 
--- | Used to detect possible infinite loops.
+-- | Returns all of the lvalues within an expression. Used to detect possible infinite loops.
 lvaluesOf :: Expression -> [Lvalue]
 lvaluesOf (ELvalue lval) = [lval]
 lvaluesOf (EUnOp _ expr) = lvaluesOf (fromLocated expr)
 lvaluesOf (EBinOp _ lhs rhs) = lvaluesOf (fromLocated lhs) <> lvaluesOf (fromLocated rhs)
 lvaluesOf _ = []
 
+-- | Returns True if the statement possibly modifies the lvalue.
 modifiesLvalue :: Lvalue -> Statement -> Bool
 modifiesLvalue lval (SAssign lval' _)
     = nameLvalue lval == nameLvalue lval'

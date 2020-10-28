@@ -17,6 +17,7 @@ import RooAst
 -----------------------------------
 
 -- | A state that also keeps track of errors, with helper functions.
+--   (We could use something like ExceptT, but we only learnt about it later.)
 type EitherState s v = State ([AnalysisError], s) v
 
 -- | Represents an error during static analysis. Fields are: line, col, message
@@ -100,11 +101,11 @@ concatEither list
 data Type = TBool
           | TString
           | TInt
+          | TVoid
+          | TNever
           | TArray Text Int Type
           | TRecord Text (Map Text Field)
           | TFunc [ProcSymType] Type
-          | TVoid
-          | TNever
     deriving (Ord, Eq)
 
 -- | A procedure symbol can be either a value or a reference.
@@ -139,10 +140,10 @@ instance Show Type where
     show TBool   = "boolean"
     show TString = "string"
     show TInt    = "integer"
-    show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
-    show (TRecord name _) = show name <> "{}"
     show TVoid   = "void"
     show TNever  = "!"
+    show (TArray name size ty) = show name <> " = " <> show ty <> "[" <> show size <> "]"
+    show (TRecord name _) = show name <> "{}"
     show (TFunc params ret) = "procedure(" <> concatMap show params <> ") -> " <> show ret
 
 -- | Indicating how to `Show` objects that are pass by ref or local 
@@ -170,13 +171,13 @@ tshow = T.pack . show
 backticks :: (Show a) => a -> Text
 backticks x = "`" <> tshow x <> "`"
 
--- | Tracking noun occurrences 
+-- | Pluralises a now correctly.
 countWithNoun :: (Show a, Integral a) => a -> Text -> Text
 countWithNoun x noun
     | x == 1    = "1 " <> noun
     | otherwise = tshow x <> " " <> noun <> "s"
 
--- | Visualising booleans 
+-- | Visualising booleans (the `Show` instance is capitalised which looks wrong)
 tshowBool :: Bool -> Text
 tshowBool True = "true"
 tshowBool False = "false"
@@ -239,10 +240,11 @@ concatPair = foldr combine ([], [])
 mapPair :: (a -> b) -> (a, a) -> (b, b)
 mapPair f (x, y) = (f x, f y)
 
--- | Generating a list of pairs, by attaching a number to each object
+-- | Generating a list of pairs, by attaching a number to each object (same as Python)
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0..]
 
+-- | `uncurry` but for 3-argument functions
 uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (x, y, z)= f x y z
 

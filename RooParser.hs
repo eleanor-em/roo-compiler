@@ -61,6 +61,7 @@ scanner = Q.makeTokenParser
     , Q.caseSensitive   = True
     })
 
+-- Shortcuts for the generated scanner
 whiteSpace :: Parser ()
 whiteSpace = Q.whiteSpace scanner
 
@@ -85,6 +86,7 @@ reserved, reservedOp :: String -> Parser ()
 reserved   = lexeme . Q.reserved scanner
 reservedOp = Q.reservedOp scanner
 
+-- | Parse a keyword; behaves like `reserved "foo"` but without requiring it to be reserved.
 pKeyword :: String -> Parser ()
 pKeyword []  = pure ()
 
@@ -170,6 +172,7 @@ pFieldDecl = liftA2 FieldDecl pPrimitiveType pIdent
 pTypeName :: Parser LocatedTypeName
 pTypeName = liftA2 LocatedTypeName sourcePos pTypeNameInner
 
+-- | Parse the raw type name (the caller locates it)
 pTypeNameInner :: Parser TypeName
 pTypeNameInner =
         AliasTypeName <$> pIdent
@@ -185,12 +188,14 @@ pPrimitiveType =
     <|>
         reserved "integer" $> RawIntType
 
+-- Parses a return type, which may be primitive or void
 pReturnType :: Parser TypeName
 pReturnType =
         PrimitiveTypeName <$> pPrimitiveType
     <|>
         pKeyword "void" $> VoidTypeName
 
+-- Parses a function type
 pFunctionType :: Parser TypeName
 pFunctionType = do
     reserved "procedure"
@@ -429,9 +434,11 @@ pEscapeSequence :: Char -> Parser String
 pEscapeSequence escaped = char escaped $> ('\\' : [escaped])
     <?> "escape sequence (\\\", \\\\, \\n, or \\t)"
 
+-- | Parses a function call
 pFuncCall :: Parser LocatedExpr
 pFuncCall = liftSourcePos $ liftA2 EFunc pIdent (parens (pExpression `sepBy` comma))
 
+-- | Parses a lambda expression
 pLambda :: Parser LocatedExpr
 pLambda = do
     pos <- sourcePos

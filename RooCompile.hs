@@ -110,8 +110,7 @@ compileProc (Procedure _ (ProcHeader (Ident pos procName) _) retType _ statement
 
             let stackSize = localStackSize locals
             let prologue = if stackSize > 0 then ozPushStackFrame stackSize else []
-            let epilogue = (if stackSize > 0 then ozPopStackFrame  stackSize else [])
-                        <> ["return"]
+            let epilogue = if stackSize > 0 then ozPopStackFrame  stackSize else [] <> ["return"]
 
             putEither (current { blockEpilogue = epilogue })
             -- Load arguments
@@ -581,7 +580,7 @@ copyContents locals lval rval size = do
 
     case (offsetReg', offsetReg'') of 
         (Just offsetReg', Just offsetReg'') -> copyContentsRec lval rval offsetReg' offsetReg'' size 
-        _ ->  pure $ ()
+        _ ->  pure ()
 
 -- | Function that recursively copies the contents of the stack slots until 
 --   we've hit the total size of our array/record 
@@ -841,6 +840,4 @@ getLabel = do
     current <- getEither 
     let currentLabel = nextLabel current 
     putEither (current { nextLabel = currentLabel + 1})
-    return $ "label_" <> (tshow currentLabel)
-
-
+    return $ "label_" <> tshow currentLabel

@@ -231,8 +231,7 @@ prettyGetExpr expr@(EUnOp op _) (OpRight parentOp)
 prettyGetExpr (EUnOp op (LocatedExpr _ expr)) _
     = prettyUnOp op <> prettyExpr expr
 
--- TODO: make nicer
-prettyGetExpr (ELambda _ _ _ _) _ = "<lambda expression>"
+prettyGetExpr ELambda {} _ = "<lambda expression>"
 
 -----------------------------------
 -- Expression Helper Pretty Printers 

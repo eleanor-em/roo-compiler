@@ -2,9 +2,8 @@
 Module      : Main
 Description : Main program for the compiler
 
-Main program written by $team for Programming Language Implementation
-Assignment 1b. This program handles command-line flags and calls the appropriate function to
-handle the request.
+Main program written by Eleanor McMurtry & Jenny Yan for Programming Language Implementation
+Assignment 3.
 -}
 
 -- Needed to make colour printing behave
